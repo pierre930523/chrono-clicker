@@ -1,0 +1,252 @@
+/* ChronoClicker Content Script & Overlay Styles */
+
+/* 1. 元素選取器高亮遮罩 */
+#chrono-picker-highlight {
+  position: fixed;
+  pointer-events: none;
+  z-index: 2147483640;
+  border: 2px solid #00f2fe;
+  background: rgba(0, 242, 254, 0.18);
+  box-shadow: 0 0 15px rgba(0, 242, 254, 0.6), inset 0 0 10px rgba(0, 242, 254, 0.3);
+  border-radius: 4px;
+  transition: all 0.05s ease-out;
+  display: none;
+  box-sizing: border-box;
+}
+
+#chrono-picker-badge {
+  position: absolute;
+  top: -28px;
+  left: 0;
+  background: linear-gradient(135deg, #1e3c72, #2a5298);
+  color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}
+
+/* 2. 懸浮倒數 HUD 面板 (Glassmorphism Dark Theme) */
+#chrono-hud-container {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  width: 320px;
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(0, 242, 254, 0.2);
+  color: #f8fafc;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  z-index: 2147483645;
+  box-sizing: border-box;
+  user-select: none;
+  transition: opacity 0.2s, transform 0.2s;
+  overflow: hidden;
+}
+
+#chrono-hud-container.minimized #chrono-hud-body {
+  display: none;
+}
+
+#chrono-hud-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: move;
+}
+
+.chrono-hud-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #38bdf8;
+}
+
+.chrono-hud-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chrono-hud-btn-icon {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.chrono-hud-btn-icon:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+#chrono-hud-body {
+  padding: 14px;
+}
+
+.chrono-hud-target-time {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chrono-hud-badge-tz {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 10px;
+}
+
+.chrono-hud-countdown-box {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 8px;
+  padding: 10px;
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.chrono-hud-countdown-label {
+  font-size: 10px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 2px;
+}
+
+.chrono-hud-countdown-number {
+  font-family: "SF Mono", Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 26px;
+  font-weight: 800;
+  color: #38bdf8;
+  letter-spacing: 0.5px;
+  text-shadow: 0 0 12px rgba(56, 189, 248, 0.5);
+}
+
+.chrono-hud-countdown-number.urgent {
+  color: #f43f5e;
+  text-shadow: 0 0 16px rgba(244, 63, 94, 0.8);
+  animation: chrono-pulse 0.6s infinite alternate;
+}
+
+@keyframes chrono-pulse {
+  from { transform: scale(1); }
+  to { transform: scale(1.02); }
+}
+
+.chrono-hud-target-info {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 11px;
+  color: #cbd5e1;
+  margin-bottom: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.chrono-hud-target-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.chrono-hud-target-row:last-child {
+  margin-bottom: 0;
+}
+
+.chrono-hud-label {
+  color: #64748b;
+}
+
+.chrono-hud-val {
+  color: #e2e8f0;
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: monospace;
+}
+
+.chrono-hud-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.chrono-hud-btn {
+  flex: 1;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: background 0.15s, transform 0.05s;
+}
+
+.chrono-hud-btn:active {
+  transform: scale(0.98);
+}
+
+.chrono-hud-btn-cancel {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.chrono-hud-btn-cancel:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+}
+
+.chrono-hud-btn-preview {
+  background: rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.chrono-hud-btn-preview:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+/* 3. 測試/觸發時的短暫視覺波紋 */
+.chrono-click-flash {
+  outline: 3px solid #10b981 !important;
+  box-shadow: 0 0 24px #10b981 !important;
+  animation: chrono-flash 0.8s ease-out forwards;
+}
+
+@keyframes chrono-flash {
+  0% { transform: scale(1); filter: brightness(1.4); }
+  50% { transform: scale(0.97); }
+  100% { transform: scale(1); filter: brightness(1); }
+}

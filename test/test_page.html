@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>ChronoClicker - 測試頁面</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f172a;
+      color: #f1f5f9;
+      padding: 30px;
+    }
+    h1 { font-size: 22px; color: #38bdf8; margin-bottom: 6px; }
+    .subtitle { font-size: 12px; color: #64748b; margin-bottom: 30px; }
+    .section { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+    .section-title { font-size: 14px; font-weight: 700; color: #94a3b8; margin-bottom: 14px; }
+    .btn-group { display: flex; gap: 12px; flex-wrap: wrap; }
+    button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    #mainBtn {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #fff;
+      font-size: 16px;
+      padding: 14px 28px;
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);
+      id: "mainBtn";
+    }
+    #mainBtn:hover { filter: brightness(1.15); transform: scale(1.03); }
+    #react-like-btn {
+      background: #0ea5e9;
+      color: #fff;
+    }
+    #form-submit-btn {
+      background: #6366f1;
+      color: #fff;
+    }
+    #trust-btn {
+      background: #f59e0b;
+      color: #000;
+    }
+    .log-panel {
+      background: #020617;
+      border: 1px solid #1e3a5f;
+      border-radius: 8px;
+      padding: 14px;
+      font-family: monospace;
+      font-size: 12px;
+      height: 200px;
+      overflow-y: auto;
+      color: #7dd3fc;
+    }
+    .log-entry { padding: 2px 0; border-bottom: 1px solid #0f2040; }
+    .log-entry.success { color: #4ade80; }
+    .log-entry.trigger { color: #f9a8d4; font-weight: bold; }
+    .log-entry.warn { color: #facc15; }
+    .info-bar { 
+      display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px;
+      background: #0f172a; padding: 12px 16px; border-radius: 8px;
+      border: 1px solid #1e293b; font-size: 12px; 
+    }
+    .info-item { display: flex; flex-direction: column; gap: 2px; }
+    .info-label { color: #64748b; }
+    .info-val { color: #38bdf8; font-family: monospace; font-weight: bold; }
+    .trust-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .trusted { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+    .not-trusted { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+  </style>
+</head>
+<body>
+  <h1>⚡ ChronoClicker 測試沙盒</h1>
+  <p class="subtitle">使用此頁面驗證擴充功能的元素選取、定時精度與事件觸發相容性</p>
+
+  <!-- 即時資訊橫幅 -->
+  <div class="info-bar">
+    <div class="info-item">
+      <span class="info-label">本機時間</span>
+      <span class="info-val" id="localTime">--</span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">總計點擊次數</span>
+      <span class="info-val" id="totalClicks">0</span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">最後點擊時間</span>
+      <span class="info-val" id="lastClickTime">--</span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">最後事件 isTrusted</span>
+      <span id="lastIsTrusted">--</span>
+    </div>
+  </div>
+
+  <!-- 主要測試按鈕 -->
+  <div class="section">
+    <div class="section-title">🎯 主要觸發目標 (選這個用於測試)</div>
+    <div class="btn-group">
+      <button id="mainBtn" onclick="handleClick(event, '主要按鈕 #mainBtn')">
+        ✅ 主要目標按鈕
+      </button>
+      <button id="react-like-btn" onclick="handleClick(event, 'React-like 按鈕')">
+        ⚛️ React-like Button
+      </button>
+    </div>
+  </div>
+
+  <!-- 表單測試 -->
+  <div class="section">
+    <div class="section-title">📝 表單提交測試</div>
+    <form id="testForm" onsubmit="handleFormSubmit(event)">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input type="text" placeholder="測試輸入欄..." 
+               style="background:#0f172a;border:1px solid #334155;color:#f1f5f9;padding:8px 12px;border-radius:6px;font-size:13px;flex:1">
+        <button type="submit" id="form-submit-btn">提交表單</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- isTrusted 驗證區 -->
+  <div class="section">
+    <div class="section-title">🔒 isTrusted 事件驗證 (反機器人偵測模擬)</div>
+    <div class="btn-group">
+      <button id="trust-btn" onclick="checkTrusted(event)">點擊驗證 isTrusted</button>
+    </div>
+    <p style="font-size:11px;color:#64748b;margin-top:10px;">
+      • 標準 DOM 模擬點擊 → <code style="color:#f87171">isTrusted: false</code><br>
+      • CDP 原生可信點擊（啟用後） → <code style="color:#4ade80">isTrusted: true</code>
+    </p>
+  </div>
+
+  <!-- 事件日誌 -->
+  <div class="section">
+    <div class="section-title">📜 觸發事件日誌</div>
+    <div class="log-panel" id="logPanel">
+      <div class="log-entry">等待事件觸發...</div>
+    </div>
+    <button onclick="clearLog()" style="margin-top:8px;background:#334155;color:#94a3b8;font-size:11px;padding:5px 10px;">清除日誌</button>
+  </div>
+
+  <script>
+    let totalClicks = 0;
+    
+    function now() {
+      return new Date().toISOString().replace('T', ' ').replace('Z', '');
+    }
+
+    function log(msg, type = '') {
+      const panel = document.getElementById('logPanel');
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      entry.textContent = `[${now()}] ${msg}`;
+      panel.appendChild(entry);
+      panel.scrollTop = panel.scrollHeight;
+    }
+
+    function clearLog() {
+      document.getElementById('logPanel').innerHTML = '<div class="log-entry">日誌已清除</div>';
+    }
+
+    function handleClick(event, label) {
+      totalClicks++;
+      const ts = performance.now().toFixed(3);
+      document.getElementById('totalClicks').textContent = totalClicks;
+      document.getElementById('lastClickTime').textContent = now().split(' ')[1];
+      
+      const trusted = event.isTrusted;
+      const badge = trusted 
+        ? '<span class="trust-badge trusted">isTrusted ✓</span>' 
+        : '<span class="trust-badge not-trusted">isTrusted ✗</span>';
+      document.getElementById('lastIsTrusted').innerHTML = badge;
+
+      log(`🎯 ${label} 被點擊！ isTrusted=${trusted} | perf.now=${ts}ms | 計數=${totalClicks}`, 'trigger');
+    }
+
+    function handleFormSubmit(event) {
+      event.preventDefault();
+      log(`📝 表單提交事件觸發！ isTrusted=${event.isTrusted}`, 'success');
+    }
+
+    function checkTrusted(event) {
+      log(`🔒 isTrusted 驗證: ${event.isTrusted ? '✅ TRUSTED (真實使用者)' : '❌ NOT TRUSTED (程式模擬)'}`, 
+          event.isTrusted ? 'success' : 'warn');
+    }
+
+    // 監聽所有點擊事件（含擴充功能模擬的）
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('button') && !e.target.closest('input')) return;
+      if (e.target.closest('#logPanel')) return;
+    }, true);
+
+    // 即時時鐘
+    function updateClock() {
+      document.getElementById('localTime').textContent = new Date().toISOString().replace('T', ' ').slice(0, 23);
+      requestAnimationFrame(updateClock);
+    }
+    updateClock();
+
+    log('✅ 測試頁面已載入，ChronoClicker 擴充功能可在此頁面進行完整測試');
+  </script>
+</body>
+</html>
