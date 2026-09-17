@@ -270,30 +270,86 @@ executeClick();
 
 ---
 
+## 🎫 遠大售票 (ticketplus.com.tw) 深度剖析與失效修復
+
+### 1. 為什麼一般擴充功能與點擊方法在 Ticket Plus 全部失效？
+
+深入分析 Ticket Plus 的前端架構與反自動化保護機制，發現其具備以下多重阻擋特徵：
+
+1. **Vue / Nuxt 深度巢狀結構與內部 Span 陷阱**：
+   - 購票按鈕為 `<button class="v-btn ..."><span class="v-btn__content"><span class="btn-text">立即購票</span></span></button>`。
+   - 一般點擊器或選取器會選中內層文字 `<span>`。在 Vue 框架中，`span.click()` 並不會正常觸發掛載在父級 `<button>` 上的 `@click` 虛擬 DOM 事件監聽。
+2. **動態暫態 Class 與 Scoped CSS 突變**：
+   - 售票前，按鈕附帶 `v-btn--disabled`、`disabled` 或 Scoped 動態屬性；當整點開賣瞬間，Vue 響應式系統動態移除了這些 class。
+   - 若外掛記錄的 CSS Selector 包含 `.v-btn--disabled`，開賣當下該 Selector 會立即變成 `null`，導致「找不到元素」錯誤。
+3. **嚴格的 `event.isTrusted === true` 檢驗**：
+   - 網站底層監聽 `pointerdown`、`mousedown` 與 `click`，並校驗 `event.isTrusted`。
+   - 所有透過 JavaScript 產生的合成事件（如 `new MouseEvent()`、`dispatchEvent` 或 `el.click()`）其 `isTrusted` 屬性一律被瀏覽器強制設定為 `false`，會被網站直接忽視或靜默阻擋。
+4. **CSS `pointer-events: none` 與 `disabled` 物理性鎖定**：
+   - 開賣前按鈕設有 `pointer-events: none` 與 `disabled`。即便向其派發事件，瀏覽器核心也會直接拒絕傳遞事件至回呼函式。
+5. **開賣瞬間的非同步微延遲 (VDOM Hydration Lag)**：
+   - 在 12:00:00.000 瞬間，網站可能因 WebSocket 廣播延遲、倒數計時器排程或 API 回應，延遲 10~50 毫秒才將按鈕解鎖更新為「立即購票」。若外掛在整點只嘗試點擊一次，往往只會點到尚未解鎖的殘留狀態。
+
+---
+
+### 2. ChronoClicker 的專屬破解與全能修復架構
+
+針對 Ticket Plus 的技術特徵，本版本實現了全方位的專屬適配升級：
+
+| 挑戰機制 | ChronoClicker 深度修復解決方案 |
+|---------|---------------------|
+| **選取元素後資料遺失** | **跨環境雙重持久化**：彈窗關閉後，Content Script 與 Background Service Worker 即刻將選取的 Selector、XPath、文字與物理座標直接寫入 `chrome.storage.local`，頁面同步彈出 Toast 確認，徹底解決 Popup 卸載導致資料丟失之致命 Bug。 |
+| **多場次按鈕選取混淆** | **卡片級作用域選取器**：徹底移除原本回傳泛用 `button.v-btn` 的缺陷，改以 `.session-item`、`.v-card` 與 nth-child 建立唯一作用域 Selector，確保場次與票區精確對應。 |
+| **動態 Class 與 Vue 節點置換** | **穩定屬性過濾與動態重解**：自動濾除 `v-btn--disabled`、`loading` 等暫態類名；極速輪詢窗口在開賣瞬間每次 tick 重新調用 `resolveTarget`，能無縫抓取 Vue 響應式所置換出的全新 active DOM 節點。 |
+| **`isTrusted` 反爬蟲檢驗** | **CDP 原生可信點擊 (isTrusted: true)**：透過 Chrome DevTools Protocol 由瀏覽器內核派發真實滑鼠移動、按壓（停留 30ms）與釋放，完美模擬硬體級點擊；並停止派發易被偵測的合成 fake DOM 事件。 |
+| **`pointer-events: none` 阻擋** | **全樹深層強制解鎖器**：擊發前自動將目標元素、父級 `<button>`、`<fieldset>` 與全部子節點設定 `pointer-events: auto !important`，並強制清除 `disabled` 與 `aria-disabled`。 |
+| **未開賣文字與毫秒微延遲** | **全正則比對與 10ms 極速輪詢**：全面支援「尚未開售」、「尚未開賣」、「敬請期待」、「未開售」、「開賣倒數」與「暫停販售」，售票到達時若處於禁用或未開售，排程器以 10ms 頻率密集輪詢，直到 Vue 渲染完成瞬間精準擊發！ |
+| **Windows DPI 縮放偏差** | **Per-Monitor 物理像素換算**：整合 `window.devicePixelRatio` 與視窗桌面絕對座標，Python 與 PowerShell 伺服器均啟用 Per-Monitor DPI 感知，滑鼠游標在 125%、150% 等螢幕縮放下皆 100% 精準命中按鈕中心。 |
+
+---
+
+## 🖱️ 終極方案：本機系統級真實實體滑鼠連線服務 (Hardware Mouse Driver)
+
+除了瀏覽器內的 CDP 原生點擊之外，ChronoClicker 更加入了**作業系統核心層級的實體硬體滑鼠驅動方案**。
+直接調用 Windows `user32.dll` API 移動實體滑鼠游標至目標物理像素並進行硬體點擊！且在擊發前自動將 Chrome 視窗置頂激活 (`SetForegroundWindow`)，避免焦點遺失！
+
+> 🌟 **優勢**：由於是 Windows 作業系統游標直接物理點擊，**任何瀏覽器沙盒限制、反爬蟲防禦、iframe 框架或防作弊腳本均 100% 無法偵測或阻擋**。
+
+### 啟動方式（超簡單，一鍵即用）：
+
+1. 開啟專案資料夾下的 `native_helper/` 目錄
+2. **雙擊執行** `start_mouse_server.bat`
+   - 系統已內建自動判斷：若有 Python 則以 Python 啟動；若無則自動啟用 Windows 原生 PowerShell 模式，完全無需另外安裝環境！
+3. 視窗顯示 `⚡ ChronoClicker - 系統級實體滑鼠連線服務已啟動 (127.0.0.1:28888)`
+4. 開啟 ChronoClicker 彈窗，勾選 **「🖱️ 啟用本機實體滑鼠驅動點擊」**，狀態將顯示 `🟢 實體滑鼠已連線`
+5. 倒數時間到達時，實體滑鼠游標將會**自動飛至按鈕位置並執行實體按壓點擊**！
+
+---
+
 ## 🗂️ 專案結構
 
 ```
 chrono-clicker/
-├── manifest.json                    # Manifest V3 擴充功能設定
+├── manifest.json                    # Manifest V3 擴充功能設定（包含 debugger 與 nativeMessaging 權限）
 ├── background/
-│   └── service_worker.js            # 時間同步、CDP 原生點擊調度
+│   └── service_worker.js            # 時間同步、CDP 原生點擊調度、本機實體滑鼠 HTTP 通訊代理
 ├── content/
-│   ├── content_script.js            # 選取器、多層備案解析、倒數引擎、HUD
+│   ├── content_script.js            # 智慧選取器、Ticket Plus 解鎖引擎、極速輪詢、三重擊發引擎
 │   └── content_style.css            # 選取器高亮、HUD 樣式
 ├── popup/
-│   ├── popup.html                   # 擴充功能彈窗介面
-│   ├── popup.css                    # 暗黑科技風格樣式
-│   └── popup.js                     # 彈窗邏輯與設定管理
+│   ├── popup.html                   # 擴充功能彈窗介面（新增實體滑鼠切換、Ticket Plus 專屬標籤）
+│   ├── popup.css                    # 暗黑科技風格樣式與 Modal 教學視窗
+│   └── popup.js                     # 彈窗邏輯、實體滑鼠狀態輪詢與自動配置
+├── native_helper/                   # 🖱️ 本機系統級實體滑鼠伺服器模組
+│   ├── chrono_mouse_server.py       # Python 高效能實體滑鼠伺服器 (Win32 user32.dll)
+│   ├── chrono_mouse_server.ps1      # PowerShell 原生版本（無 Python 環境適用）
+│   ├── start_mouse_server.bat       # Windows 一鍵雙擊啟動腳本
+│   └── test_mouse_server.py         # 連線自我測試工具
 ├── utils/
 │   └── time_sync.js                 # 時間同步核心、時區轉換引擎
-├── icons/
-│   ├── icon16.png
-│   ├── icon48.png
-│   └── icon128.png
-├── docs/
-│   └── images/                      # README 使用圖片
-└── test/
-    └── test_page.html               # 完整測試沙盒
+├── test/
+│   └── test_page.html               # 完整測試沙盒（含 Ticket Plus 高仿真 Vue / isTrusted 測試區）
+└── icons/                           # 擴充功能圖示
 ```
 
 ---

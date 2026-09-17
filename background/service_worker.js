@@ -1,6 +1,11 @@
 /**
  * ChronoClicker - Background Service Worker (Manifest V3)
- * 負責跨域時間同步請求、CDP 原生可信點擊調度、多目標排程、AI 驗證碼解析
+ * 負責：
+ *   1. 跨域時間同步請求與原子鐘校準
+ *   2. CDP (Chrome DevTools Protocol) 真正原生 isTrusted: true 滑鼠事件調度 (具備預熱 Session 池與人體工學點擊)
+ *   3. 本機系統級實體滑鼠伺服器 (Windows Win32 API) 通訊調度
+ *   4. 多目標序列排程器
+ *   5. AI 驗證碼辨識代理 (繞過 CORS)
  */
 
 importScripts('../utils/time_sync.js');
@@ -17,10 +22,53 @@ chrome.runtime.onStartup.addListener(async () => {
   await TimeSync.syncTime();
 });
 
-// 訊息處理中心
+// ─── CDP 除錯器 Session 管理中心 ──────────────────────────────────
+const attachedTabs = new Set();
+let isScheduleActive = false;
+
+chrome.debugger.onDetach.addListener((source, reason) => {
+  if (source && source.tabId) {
+    attachedTabs.delete(source.tabId);
+    console.log(`[ChronoClicker CDP] Tab ${source.tabId} detached. Reason:`, reason);
+  }
+});
+
+async function ensureDebuggerAttached(tabId) {
+  if (!tabId) throw new Error('Invalid tabId for debugger');
+  if (attachedTabs.has(tabId)) {
+    return true;
+  }
+  try {
+    await chrome.debugger.attach({ tabId }, '1.3');
+    attachedTabs.add(tabId);
+    console.log(`[ChronoClicker CDP] Successfully attached to tab ${tabId}`);
+    return true;
+  } catch (err) {
+    if (err.message && err.message.includes('already attached')) {
+      attachedTabs.add(tabId);
+      return true;
+    }
+    throw err;
+  }
+}
+
+async function detachDebugger(tabId) {
+  if (!tabId || !attachedTabs.has(tabId)) return;
+  try {
+    await chrome.debugger.detach({ tabId });
+  } catch (e) {
+    // 忽略 detach 異常
+  } finally {
+    attachedTabs.delete(tabId);
+    console.log(`[ChronoClicker CDP] Detached from tab ${tabId}`);
+  }
+}
+
+// ─── 訊息處理中心 ────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   const { action, payload } = request;
 
+  // 1. 時間同步
   if (action === 'SYNC_TIME') {
     TimeSync.syncTime().then((result) => {
       sendResponse(result);
@@ -41,18 +89,56 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false;
   }
 
-  // CDP (Chrome DevTools Protocol) 原生可信點擊派發
-  if (action === 'DISPATCH_CDP_CLICK') {
-    const tabId = sender.tab ? sender.tab.id : payload.tabId;
-    const { x, y, repeat = 1, interval = 50 } = payload;
+  // 2. CDP 預熱 (Pre-Attach) — 倒數開始時預先掛載，消除零秒點擊延遲
+  if (action === 'PRE_ATTACH_CDP') {
+    const tabId = sender.tab ? sender.tab.id : payload?.tabId;
+    isScheduleActive = true;
+    focusTabAndWindow(tabId).then(() => {
+      return ensureDebuggerAttached(tabId);
+    }).then(() => sendResponse({ success: true }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
 
-    dispatchCdpClicks(tabId, x, y, repeat, interval)
+  if (action === 'DETACH_CDP') {
+    const tabId = sender.tab ? sender.tab.id : payload?.tabId;
+    isScheduleActive = false;
+    detachDebugger(tabId)
       .then(() => sendResponse({ success: true }))
       .catch(err => sendResponse({ success: false, error: err.message }));
     return true;
   }
 
-  // 轉發選取器激活命令到指定分頁
+  // 3. CDP 原生點擊派發
+  if (action === 'DISPATCH_CDP_CLICK') {
+    const tabId = sender.tab ? sender.tab.id : payload.tabId;
+    const { x, y, repeat = 1, interval = 50, keepAttached = isScheduleActive } = payload;
+
+    dispatchCdpClicks(tabId, x, y, repeat, interval, keepAttached)
+      .then(() => sendResponse({ success: true }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  // 4. 系統級實體滑鼠連線服務 (Windows Hardware Mouse Server)
+  if (action === 'CHECK_SYSTEM_MOUSE_STATUS') {
+    checkSystemMouseServer()
+      .then(res => sendResponse(res))
+      .catch(err => sendResponse({ available: false, error: err.message }));
+    return true;
+  }
+
+  if (action === 'DISPATCH_SYSTEM_MOUSE_CLICK') {
+    const tabId = sender.tab ? sender.tab.id : payload.tabId;
+    const { screenX, screenY, physicalX, physicalY, repeat = 1, interval = 50, button = 'left' } = payload;
+    focusTabAndWindow(tabId).then(() => {
+      return dispatchSystemMouseClick(screenX, screenY, physicalX, physicalY, repeat, interval, button);
+    }).then(res => sendResponse(res))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  // 5. 轉發選取器激活命令到指定分頁
   if (action === 'START_ELEMENT_PICKER') {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0] && tabs[0].id) {
@@ -66,12 +152,65 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // ─── 功能 A：多目標定時排程 ──────────────────────────────────
-  // popup 在計算好 targetEpoch 後，將 targets 清單連同 targetEpoch 傳到
-  // content script 執行，background 只負責在正確時間點透過 tabs.sendMessage
-  // 觸發 EXECUTE_MULTI_CLICK。
+  // 5.1 接收並持久化元素選取結果（解決 popup 關閉後選取資訊丟失問題）
+  if (action === 'ELEMENT_PICKED') {
+    const summary = payload;
+    const tabUrl = sender.tab ? sender.tab.url : '';
+    let domain = 'global';
+    try {
+      if (tabUrl) domain = new URL(tabUrl).hostname || 'global';
+    } catch (e) {}
+
+    chrome.storage.local.get([`site_${domain}`], (res) => {
+      const current = res[`site_${domain}`] || {};
+      const updated = {
+        ...current,
+        selector: summary.selector || current.selector || '',
+        xpath: summary.xpath || current.xpath || '',
+        searchText: summary.searchText || current.searchText || '',
+        coords: summary.coords || current.coords,
+        targetPreview: `${summary.tagName.toUpperCase()}${summary.id ? '#' + summary.id : ''} "${summary.text || ''}"`,
+        isTicketPlus: summary.isTicketPlus || domain.includes('ticketplus.com.tw')
+      };
+      chrome.storage.local.set({ [`site_${domain}`]: updated }, () => {
+        console.log(`[ChronoClicker SW] ✅ 已自動持久化選取元素 (${domain}):`, updated);
+      });
+    });
+    sendResponse({ success: true });
+    return false;
+  }
+
+  // 5.2 接收並持久化座標擷取結果
+  if (action === 'COORD_CAPTURED') {
+    const { x, y, viewportX, viewportY, screenX, screenY, physicalX, physicalY, isPageCoords } = payload;
+    const tabUrl = sender.tab ? sender.tab.url : '';
+    let domain = 'global';
+    try {
+      if (tabUrl) domain = new URL(tabUrl).hostname || 'global';
+    } catch (e) {}
+
+    chrome.storage.local.get([`site_${domain}`], (res) => {
+      const current = res[`site_${domain}`] || {};
+      const updated = {
+        ...current,
+        useCoords: true,
+        coords: {
+          x, y, viewportX, viewportY, screenX, screenY, physicalX, physicalY,
+          isPageCoords: isPageCoords === true
+        },
+        targetPreview: `📍 頁面座標 (X:${x}, Y:${y})`
+      };
+      chrome.storage.local.set({ [`site_${domain}`]: updated }, () => {
+        console.log(`[ChronoClicker SW] ✅ 已自動持久化座標 (${domain}):`, updated);
+      });
+    });
+    sendResponse({ success: true });
+    return false;
+  }
+
+  // 6. 功能 A：多目標定時排程
   if (action === 'SCHEDULE_MULTI_CLICK') {
-    const { tabId, targets, targetEpoch, offset } = payload;
+    const { tabId, targets, targetEpoch, offset, useCdp, useSystemMouse } = payload;
     const accurateNow = Date.now() + (offset || 0);
     const delayMs = targetEpoch - accurateNow;
 
@@ -80,14 +219,40 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return false;
     }
 
+    isScheduleActive = true;
+
+    // 將頂層的 useCdp 與 useSystemMouse 屬性灌注至每一個未自訂的子目標中
+    const enrichedTargets = targets.map(t => ({
+      ...t,
+      useCdp: t.useCdp !== undefined ? t.useCdp : (useCdp || false),
+      useSystemMouse: t.useSystemMouse !== undefined ? t.useSystemMouse : (useSystemMouse || false)
+    }));
+
+    // 若需要 CDP，提前 3 秒預先掛載除錯器
+    if (useCdp || enrichedTargets.some(t => t.useCdp)) {
+      const preWarmDelay = Math.max(0, delayMs - 3000);
+      setTimeout(() => {
+        focusTabAndWindow(tabId).then(() => {
+          ensureDebuggerAttached(tabId).catch(console.warn);
+        });
+      }, preWarmDelay);
+    }
+
     setTimeout(() => {
-      chrome.tabs.sendMessage(tabId, {
-        action: 'EXECUTE_MULTI_CLICK',
-        payload: { targets }
-      }, () => {
-        if (chrome.runtime.lastError) {
-          console.warn('[ChronoClicker] EXECUTE_MULTI_CLICK dispatch error:', chrome.runtime.lastError.message);
-        }
+      focusTabAndWindow(tabId).then(() => {
+        chrome.tabs.sendMessage(tabId, {
+          action: 'EXECUTE_MULTI_CLICK',
+          payload: { targets: enrichedTargets }
+        }, () => {
+          if (chrome.runtime.lastError) {
+            console.warn('[ChronoClicker] EXECUTE_MULTI_CLICK dispatch error:', chrome.runtime.lastError.message);
+          }
+          // 排程執行結束後 4 秒自動分離除錯器
+          setTimeout(() => {
+            isScheduleActive = false;
+            detachDebugger(tabId).catch(() => {});
+          }, 4000);
+        });
       });
     }, Math.max(0, delayMs));
 
@@ -95,7 +260,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false;
   }
 
-  // ─── 功能 B：擷取頁面截圖（CAPTCHA 用）───────────────────────
+  // 7. 功能 B：CAPTCHA 頁面截圖
   if (action === 'CAPTURE_CAPTCHA_SCREENSHOT') {
     const tabId = payload.tabId;
     chrome.tabs.captureVisibleTab(null, { format: 'png' }, (dataUrl) => {
@@ -105,13 +270,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ success: true, dataUrl });
       }
     });
-    return true; // 非同步回應
+    return true;
   }
 
-  // ─── 功能 B：AI 驗證碼解析代理（繞過 CORS）─────────────────────
+  // 8. 功能 B：AI 驗證碼解析代理（繞過 CORS）
   if (action === 'SOLVE_CAPTCHA_AI') {
     const { model, apiKey, imageBase64, prompt } = payload;
-
     solveCaptchaWithAI(model, apiKey, imageBase64, prompt)
       .then(answer => sendResponse({ success: true, answer }))
       .catch(err => sendResponse({ success: false, error: err.message }));
@@ -119,39 +283,65 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// ─── CDP 滑鼠事件派發 ─────────────────────────────────────────────
+async function focusTabAndWindow(tabId) {
+  if (!tabId) return;
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (tab && !tab.active) {
+      await chrome.tabs.update(tabId, { active: true });
+    }
+    if (tab && tab.windowId) {
+      await chrome.windows.update(tab.windowId, { focused: true });
+    }
+  } catch (e) {}
+}
 
+// ─── CDP 原生可信點擊派發核心 ──────────────────────────────────────
 /**
- * 透過 chrome.debugger 派發 isTrusted === true 的真實滑鼠事件
- * x, y 必須是視窗內 (viewport) 座標，單位：CSS 像素
+ * 透過 chrome.debugger 派發 isTrusted === true 的真正原生滑鼠事件
+ * 具有人體工學按壓停留 (30ms)、完整 buttons/pointerType 與微秒級預先掛載支援
  */
-async function dispatchCdpClicks(tabId, x, y, repeat, interval) {
+async function dispatchCdpClicks(tabId, x, y, repeat = 1, interval = 50, keepAttached = false) {
   if (!tabId) throw new Error('Invalid tabId');
 
+  await focusTabAndWindow(tabId);
+  await ensureDebuggerAttached(tabId);
   const target = { tabId };
+  const rx = Math.round(x);
+  const ry = Math.round(y);
 
   try {
-    await chrome.debugger.attach(target, '1.3');
-
     for (let i = 0; i < repeat; i++) {
+      // 1. 移動游標至目標點（觸發 CSS :hover 與 JS pointerover/mouseenter）
       await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
         type: 'mouseMoved',
-        x: Math.round(x),
-        y: Math.round(y)
+        x: rx,
+        y: ry
       });
+
+      // 2. 派發按下滑鼠左鍵（buttons: 1, pointerType: 'mouse'）
       await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
         type: 'mousePressed',
-        x: Math.round(x),
-        y: Math.round(y),
+        x: rx,
+        y: ry,
         button: 'left',
-        clickCount: 1
+        buttons: 1,
+        clickCount: 1,
+        pointerType: 'mouse'
       });
+
+      // 3. 真實物理停留 30ms，避免極速 0ms 脈衝被防爬蟲防護判定為異常
+      await new Promise(resolve => setTimeout(resolve, 30));
+
+      // 4. 派發放開滑鼠左鍵（buttons: 0）
       await chrome.debugger.sendCommand(target, 'Input.dispatchMouseEvent', {
         type: 'mouseReleased',
-        x: Math.round(x),
-        y: Math.round(y),
+        x: rx,
+        y: ry,
         button: 'left',
-        clickCount: 1
+        buttons: 0,
+        clickCount: 1,
+        pointerType: 'mouse'
       });
 
       if (i < repeat - 1 && interval > 0) {
@@ -159,30 +349,80 @@ async function dispatchCdpClicks(tabId, x, y, repeat, interval) {
       }
     }
   } finally {
-    try {
-      await chrome.debugger.detach(target);
-    } catch (e) {
-      // 忽略已分離錯誤
+    if (!keepAttached && !isScheduleActive) {
+      setTimeout(() => {
+        if (!isScheduleActive) detachDebugger(tabId);
+      }, 1000);
     }
   }
 }
 
-// ─── AI 驗證碼解析（功能 B）──────────────────────────────────────
+// ─── 系統級實體滑鼠連線服務 (Local Hardware Mouse Server) ──────────
+const SYSTEM_MOUSE_URL = 'http://127.0.0.1:28888';
 
-/**
- * 呼叫選定的 AI 大模型 API 解析驗證碼圖片
- * @param {string} model  'gemini-2.0-flash' | 'gpt-4o' | 'claude-3-5-sonnet'
- * @param {string} apiKey 使用者設定的 API Key
- * @param {string} imageBase64 base64 圖片字串（不含 data:image/... 前綴）
- * @param {string} prompt 提示詞
- * @returns {Promise<string>} 解碼後的驗證碼答案
- */
+async function checkSystemMouseServer() {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 800);
+    const resp = await fetch(`${SYSTEM_MOUSE_URL}/status`, {
+      method: 'GET',
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (resp.ok) {
+      const data = await resp.json();
+      return { available: true, info: data };
+    }
+    return { available: false };
+  } catch (e) {
+    return { available: false, error: e.message };
+  }
+}
+
+async function dispatchSystemMouseClick(screenX, screenY, physicalX, physicalY, repeat = 1, interval = 50, button = 'left') {
+  try {
+    const body = {
+      screenX: Math.round(screenX),
+      screenY: Math.round(screenY),
+      repeat: Math.max(1, repeat),
+      interval: Math.max(10, interval),
+      button: button,
+      activateWindow: true
+    };
+    if (physicalX !== undefined && physicalX !== null) {
+      body.physicalX = Math.round(physicalX);
+    }
+    if (physicalY !== undefined && physicalY !== null) {
+      body.physicalY = Math.round(physicalY);
+    }
+
+    const resp = await fetch(`${SYSTEM_MOUSE_URL}/click`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(`System mouse server error: ${errText}`);
+    }
+
+    const res = await resp.json();
+    return { success: true, details: res };
+  } catch (err) {
+    console.warn('[ChronoClicker] System mouse click failed:', err.message);
+    throw err;
+  }
+}
+
+// ─── AI 驗證碼解析（功能 B）──────────────────────────────────────
 async function solveCaptchaWithAI(model, apiKey, imageBase64, prompt) {
   const defaultPrompt = prompt || '這是一個驗證碼圖片，請只回答驗證碼中的文字或數字，不要包含任何解釋。';
 
   // ── Google Gemini ─────────────────────────────────────────────
   if (model.startsWith('gemini')) {
-    const modelId = model; // e.g. 'gemini-2.0-flash'
+    const modelId = model;
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
     const body = {
       contents: [{
@@ -251,7 +491,7 @@ async function solveCaptchaWithAI(model, apiKey, imageBase64, prompt) {
   if (model.startsWith('claude')) {
     const url = 'https://api.anthropic.com/v1/messages';
     const body = {
-      model: model, // e.g. 'claude-3-5-sonnet-20241022'
+      model: model,
       max_tokens: 64,
       messages: [{
         role: 'user',

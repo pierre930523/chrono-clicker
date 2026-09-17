@@ -88,7 +88,10 @@
       <section class="section-card">
         <div class="section-title">
           <span>🎯 點擊目標與網頁配置</span>
-          <span class="domain-tag" id="currentDomainBadge">當前網頁</span>
+          <div style="display:flex; align-items:center; gap:5px;">
+            <span class="badge-tag" id="tpBadge" style="display:none; background:rgba(16,185,129,0.2); color:#10b981; font-weight:bold; font-size:10px;">🎫 遠大售票已適配</span>
+            <span class="domain-tag" id="currentDomainBadge">當前網頁</span>
+          </div>
         </div>
 
         <div class="picker-action-row">
@@ -183,10 +186,35 @@
           </div>
         </details>
 
-        <!-- 連點與 CDP 進階選項 -->
-        <details class="advanced-details">
-          <summary>⚙️ 連點與 CDP 選項</summary>
+        <!-- 連點與原生實體點擊選項 -->
+        <details class="advanced-details" open>
+          <summary>⚙️ 實體滑鼠、CDP 原生點擊與連點選項</summary>
           <div class="advanced-body">
+            <!-- 系統級本機實體滑鼠 -->
+            <div class="option-row" style="flex-direction:column; align-items:flex-start; gap:6px; background:rgba(0, 242, 254, 0.06); padding:8px 10px; border-radius:6px; border:1px solid rgba(0, 242, 254, 0.25);">
+              <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
+                <label class="checkbox-label" title="透過 Windows user32.dll 原生實體滑鼠驅動點擊，100% 繞過所有瀏覽器防爬蟲與 isTrusted 阻擋">
+                  <input type="checkbox" id="useSystemMouseToggle"> 🖱️ 啟用本機實體滑鼠驅動點擊
+                </label>
+                <span class="badge-tag" id="systemMouseStatusBadge" style="font-size:10px; cursor:pointer;" title="點擊檢測本機滑鼠伺服器">檢測中...</span>
+              </div>
+              <p class="fallback-hint" style="margin:0; font-size:10.5px; color:#94a3b8;">
+                調用本機實體滑鼠游標移動與點擊，無可阻擋。<br>
+                位址：<code style="color:#38bdf8;">127.0.0.1:28888</code>
+                <button type="button" class="btn-chip" id="btnHelpMouseServer" style="font-size:10px; padding:1px 6px; margin-left:4px;">❓ 如何啟動</button>
+              </p>
+            </div>
+
+            <div class="option-row">
+              <label class="checkbox-label" title="使用 Chrome 除錯器協議派發 100% 真實 isTrusted: true 滑鼠事件">
+                <input type="checkbox" id="useCdpToggle" checked> 啟用 CDP 原生可信點擊 (isTrusted: true)
+              </label>
+            </div>
+            <div class="option-row">
+              <label for="pollDurationInput" title="目標時間到達時，若按鈕未就緒或顯示「尚未開賣」，以 10ms 頻率持續輪詢">開賣極速輪詢時間：</label>
+              <input type="number" id="pollDurationInput" min="0" max="10000" step="100" value="2000" class="mini-input" style="width:55px;">
+              <span class="hint">毫秒 (ms)</span>
+            </div>
             <div class="option-row">
               <label for="repeatCount">連點次數：</label>
               <input type="number" id="repeatCount" min="1" max="20" value="1" class="mini-input">
@@ -196,11 +224,6 @@
               <label for="repeatInterval">連點間隔：</label>
               <input type="number" id="repeatInterval" min="10" max="1000" value="50" class="mini-input">
               <span class="hint">毫秒 (ms)</span>
-            </div>
-            <div class="option-row">
-              <label class="checkbox-label" title="使用 Chrome 除錯器協議派發 100% 真實 isTrusted 滑鼠事件">
-                <input type="checkbox" id="useCdpToggle"> 啟用 CDP 原生可信點擊 (isTrusted)
-              </label>
             </div>
           </div>
         </details>
@@ -317,6 +340,34 @@
     <!-- 倒數即時狀態 -->
     <div class="status-banner" id="statusBanner">
       <span id="statusBannerText">待命中</span>
+    </div>
+
+    <!-- 實體滑鼠啟動教學 Modal -->
+    <div id="mouseModal" class="modal-overlay" style="display:none;">
+      <div class="modal-box">
+        <div class="modal-header">
+          <span>🖱️ 本機實體滑鼠連線服務教學</span>
+          <button type="button" id="btnCloseMouseModal" class="chrono-hud-btn-icon">✕</button>
+        </div>
+        <div class="modal-content">
+          <p style="margin-bottom:8px; font-size:12px; line-height:1.5;">
+            本機實體滑鼠服務能直接呼叫 Windows 系統驅動 (user32.dll) 移動實體游標並點擊，是穿透 <b>ticketplus.com.tw</b> 等高防售票網站的最強終極方案！
+          </p>
+          <div style="background:#090d16; border:1px solid #334155; padding:8px 10px; border-radius:6px; font-family:monospace; font-size:11px; margin-bottom:10px;">
+            📁 腳本位置：<br>
+            <span style="color:#38bdf8;">chrono-clicker/native_helper/</span><br><br>
+            🚀 啟動方式（二選一）：<br>
+            1. 雙擊執行 <b style="color:#10b981;">start_mouse_server.bat</b><br>
+            2. 或以終端機執行：<code style="color:#f59e0b;">python chrono_mouse_server.py</code>
+          </div>
+          <p style="font-size:11px; color:#94a3b8; margin-bottom:12px;">
+            啟動後顯示「⚡ 服務已啟動 127.0.0.1:28888」即可，本外掛將自動連線並點擊！
+          </p>
+          <button type="button" class="btn-picker" id="btnTestMouseServer" style="width:100%;">
+            ⚡ 測試連線狀態
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 

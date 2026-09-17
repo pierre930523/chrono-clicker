@@ -40,6 +40,32 @@
     .step-btn { background: #334155; color: #e2e8f0; border: 1px solid #475569; }
     .step-btn.clicked { background: #047857; color: #fff; border-color: #10b981; }
 
+    .btn-ticketplus {
+      background: linear-gradient(135deg, #f43f5e, #e11d48);
+      color: #fff;
+      font-size: 15px;
+      padding: 12px 24px;
+      border-radius: 6px;
+      position: relative;
+      overflow: hidden;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #f43f5e;
+      box-shadow: 0 4px 14px rgba(244, 63, 94, 0.35);
+    }
+    .btn-ticketplus.v-btn--disabled {
+      background: #475569 !important;
+      color: #94a3b8 !important;
+      cursor: not-allowed;
+      pointer-events: none;
+      box-shadow: none !important;
+      border-color: #64748b !important;
+    }
+    .btn-ticketplus .v-btn__content {
+      pointer-events: none;
+    }
+
     .log-panel {
       background: #020617;
       border: 1px solid #1e3a5f;
@@ -179,6 +205,54 @@
     </div>
   </div>
 
+  <!-- 🎫 遠大售票 (Ticket Plus) 專屬模擬測試 -->
+  <div class="section" style="border-color:#f43f5e; background:rgba(244,63,94,0.04);">
+    <div class="section-title" style="color:#fb7185;">
+      <span>🎫 遠大售票系統 (Ticket Plus) 高仿真測試專區</span>
+      <span class="badge-tag" style="background:rgba(244,63,94,0.2); color:#fb7185;">Vue / isTrusted / pointer-events 阻擋</span>
+    </div>
+    <p style="font-size:12px; color:#cbd5e1; margin-bottom:12px; line-height:1.5;">
+      高度模擬 Ticket Plus 前端防護：多場次清單 <code>.session-item</code>、內層巢狀 <code>&lt;span class="v-btn__content"&gt;</code>、初始禁用 <code>pointer-events: none</code>、動態 class <code>v-btn--disabled</code>、開賣瞬間 Vue DOM 節點置換、以及嚴格檢查 <code>event.isTrusted === true</code>（非原生真實點擊將被攔截拒絕）。
+    </p>
+    <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:12px;">
+      <!-- 場次 1 -->
+      <div class="session-item" style="background:#0f172a; padding:12px; border-radius:6px; border:1px solid #334155; display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <strong style="color:#f8fafc;">場次一：2026/10/01 (五) 19:30 台北小巨蛋</strong>
+          <div style="font-size:11px; color:#94a3b8;">票價：$4,800 / $3,800 / $2,800</div>
+        </div>
+        <div id="tpBtnContainer1">
+          <button id="tpSimBtn" class="btn-ticketplus v-btn v-btn--disabled" disabled style="pointer-events:none;" onclick="handleTpClick(event, '場次一')">
+            <span class="v-btn__content"><span class="btn-text">尚未開賣</span></span>
+          </button>
+        </div>
+      </div>
+      <!-- 場次 2 -->
+      <div class="session-item" style="background:#0f172a; padding:12px; border-radius:6px; border:1px solid #334155; display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <strong style="color:#f8fafc;">場次二：2026/10/02 (六) 19:30 台北小巨蛋</strong>
+          <div style="font-size:11px; color:#94a3b8;">票價：$4,800 / $3,800 / $2,800</div>
+        </div>
+        <div id="tpBtnContainer2">
+          <button id="tpSimBtn2" class="btn-ticketplus v-btn" onclick="handleTpClick(event, '場次二')">
+            <span class="v-btn__content"><span class="btn-text">立即購票</span></span>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="btn-group" style="align-items:center;">
+      <button type="button" id="btnUnlockTpSim" onclick="simulateTpSaleOpen()" style="background:#1e293b; color:#38bdf8; border:1px solid #38bdf8; font-size:12px; padding:8px 14px;">
+        🔓 模擬場次一倒數 3 秒開賣 (含 Vue DOM 節點熱替換)
+      </button>
+      <button type="button" onclick="resetTpSim()" style="background:#334155; color:#94a3b8; font-size:12px; padding:8px 14px;">
+        🔄 重設場次一狀態
+      </button>
+    </div>
+    <div style="margin-top:10px; font-size:11px; color:#94a3b8;" id="tpSimStatus">
+      狀態：🔒 場次一尚未開賣 (disabled / pointer-events: none) | 場次二為即刻開賣 (驗證選取器作用域不混淆)
+    </div>
+  </div>
+
   <!-- 2. 多目標組合點擊測試 -->
   <div class="section">
     <div class="section-title">
@@ -297,6 +371,54 @@
       document.getElementById('lastIsTrusted').innerHTML = badge;
 
       log(`🎯 [${label}] 被點擊！ isTrusted=${trusted} | perf=${ts}ms | clientX=${event.clientX}, clientY=${event.clientY}`, 'trigger');
+    }
+
+    function handleTpClick(event, sessionName = '場次一') {
+      if (!event.isTrusted) {
+        log(`❌ [遠大售票] 攔截未受信任的偽造點擊 (event.isTrusted === false)！請啟用 CDP 原生點擊或系統實體滑鼠！`, 'warn');
+        document.getElementById('tpSimStatus').innerHTML = `<span style="color:#ef4444;font-weight:bold;">❌ 阻擋：isTrusted === false (偽造點擊被反爬蟲攔截)</span>`;
+        return;
+      }
+      totalClicks++;
+      document.getElementById('totalClicks').textContent = totalClicks;
+      document.getElementById('lastClickTarget').textContent = `Ticket Plus ${sessionName} 按鈕`;
+      document.getElementById('lastIsTrusted').innerHTML = '<span class="trust-badge trusted">isTrusted ✓ (真正原生點擊)</span>';
+      document.getElementById('tpSimStatus').innerHTML = `<span style="color:#4ade80;font-weight:bold;">🎉 恭喜！成功通過 isTrusted 驗證並完成【${sessionName}】購票點擊！</span>`;
+      log(`🎉 [遠大售票] 成功觸發購票！【${sessionName}】isTrusted=true | 座標 (${event.clientX}, ${event.clientY})`, 'success');
+    }
+
+    function simulateTpSaleOpen() {
+      const status = document.getElementById('tpSimStatus');
+      let countdown = 3;
+      status.textContent = `⏳ 模擬場次一開賣倒數：${countdown} 秒...`;
+      const timer = setInterval(() => {
+        countdown--;
+        if (countdown > 0) {
+          status.textContent = `⏳ 模擬場次一開賣倒數：${countdown} 秒...`;
+        } else {
+          clearInterval(timer);
+          // 模擬 Vue 3 響應式：開賣瞬間以全新 DOM <button> 節點置換舊節點
+          const container = document.getElementById('tpBtnContainer1');
+          container.innerHTML = `
+            <button id="tpSimBtn" class="btn-ticketplus v-btn" onclick="handleTpClick(event, '場次一 (熱置換新節點)')">
+              <span class="v-btn__content"><span class="btn-text">立即購票</span></span>
+            </button>
+          `;
+          status.innerHTML = '<span style="color:#10b981;font-weight:bold;">🔥 場次一正式開賣！DOM 節點已熱置換為全新「立即購票」按鈕</span>';
+          log('[遠大售票] 模擬開賣！Vue 已置換全新 active DOM 按鈕節點', 'step');
+        }
+      }, 1000);
+    }
+
+    function resetTpSim() {
+      const container = document.getElementById('tpBtnContainer1');
+      container.innerHTML = `
+        <button id="tpSimBtn" class="btn-ticketplus v-btn v-btn--disabled" disabled style="pointer-events:none;" onclick="handleTpClick(event, '場次一')">
+          <span class="v-btn__content"><span class="btn-text">尚未開賣</span></span>
+        </button>
+      `;
+      document.getElementById('tpSimStatus').textContent = '狀態：🔒 場次一尚未開賣 (disabled / pointer-events: none) | 場次二為即刻開賣';
+      log('[遠大售票] 模擬狀態已重設為未開賣');
     }
 
     function handleStepClick(event, stepNum) {

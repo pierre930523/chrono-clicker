@@ -49,6 +49,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   const repeatCountInput      = document.getElementById('repeatCount');
   const repeatIntervalInput   = document.getElementById('repeatInterval');
   const useCdpToggle          = document.getElementById('useCdpToggle');
+  const useSystemMouseToggle  = document.getElementById('useSystemMouseToggle');
+  const systemMouseStatusBadge= document.getElementById('systemMouseStatusBadge');
+  const btnHelpMouseServer    = document.getElementById('btnHelpMouseServer');
+  const mouseModal            = document.getElementById('mouseModal');
+  const btnCloseMouseModal    = document.getElementById('btnCloseMouseModal');
+  const btnTestMouseServer    = document.getElementById('btnTestMouseServer');
+  const pollDurationInput     = document.getElementById('pollDurationInput');
+  const tpBadge               = document.getElementById('tpBadge');
 
   const btnStartCountdown     = document.getElementById('btnStartCountdown');
   const btnStopCountdown      = document.getElementById('btnStopCountdown');
@@ -172,6 +180,42 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // 實體滑鼠伺服器狀態檢查與 Modal 綁定
+  async function checkMouseServer() {
+    if (!systemMouseStatusBadge) return;
+    systemMouseStatusBadge.textContent = '連線檢測中...';
+    systemMouseStatusBadge.className = 'badge-tag';
+    chrome.runtime.sendMessage({ action: 'CHECK_SYSTEM_MOUSE_STATUS' }, (res) => {
+      if (res && res.available) {
+        systemMouseStatusBadge.textContent = '🟢 實體滑鼠已連線';
+        systemMouseStatusBadge.className = 'badge-tag online';
+        // 若在 Ticket Plus 售票網站且伺服器在線，自動啟用實體滑鼠
+        if (currentDomain && currentDomain.includes('ticketplus.com.tw') && useSystemMouseToggle) {
+          useSystemMouseToggle.checked = true;
+          saveCurrentConfig();
+        }
+      } else {
+        systemMouseStatusBadge.textContent = '⚪ 未啟動 (點擊重測)';
+        systemMouseStatusBadge.className = 'badge-tag offline';
+      }
+    });
+  }
+  checkMouseServer();
+
+  if (systemMouseStatusBadge) systemMouseStatusBadge.addEventListener('click', checkMouseServer);
+  if (btnTestMouseServer) btnTestMouseServer.addEventListener('click', () => {
+    checkMouseServer();
+    setTimeout(() => {
+      alert(systemMouseStatusBadge.textContent.includes('已連線') ? '🎉 本機實體滑鼠伺服器連線成功！' : '⚠️ 尚未偵測到伺服器，請先執行 start_mouse_server.bat');
+    }, 600);
+  });
+  if (btnHelpMouseServer) btnHelpMouseServer.addEventListener('click', () => {
+    if (mouseModal) mouseModal.style.display = 'flex';
+  });
+  if (btnCloseMouseModal) btnCloseMouseModal.addEventListener('click', () => {
+    if (mouseModal) mouseModal.style.display = 'none';
+  });
+
   // ────────────────────────────────────────────────
   // 3. 當前分頁
   // ────────────────────────────────────────────────
@@ -186,6 +230,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentDomain = 'unknown';
       }
       currentDomainBadge.textContent = currentDomain;
+
+      const isTp = currentDomain.includes('ticketplus.com.tw');
+      if (isTp) {
+        if (tpBadge) tpBadge.style.display = 'inline-block';
+        if (useCdpToggle) useCdpToggle.checked = true;
+      }
+
       await loadConfigForDomain(currentDomain);
 
       chrome.tabs.sendMessage(tab.id, { action: 'GET_CONTENT_STATUS' }, (res) => {
@@ -264,11 +315,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       targetElementInfo = p;
       targetPreviewText.textContent = `${p.tagName.toUpperCase()}${p.id ? '#' + p.id : ''} "${p.text || ''}"`;
       if (targetSelectorInput) targetSelectorInput.value = p.selector || '';
+      if (targetXpathInput && p.xpath) targetXpathInput.value = p.xpath;
+      if (targetSearchText && p.searchText) targetSearchText.value = p.searchText;
       if (p.coords) {
         if (coordXInput) coordXInput.value = p.coords.x;
         if (coordYInput) coordYInput.value = p.coords.y;
-        // 元素拾取器儲存的是頁面絕對座標
         coordsArePageSpace = p.coords.isPageCoords === true;
+      }
+      if (p.isTicketPlus) {
+        if (useCdpToggle) useCdpToggle.checked = true;
+        if (tpBadge) tpBadge.style.display = 'inline-block';
       }
       saveCurrentConfig();
     }
@@ -278,7 +334,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (coordXInput) coordXInput.value = x;
       if (coordYInput) coordYInput.value = y;
       if (useCoordsToggle) useCoordsToggle.checked = true;
-      // 記錄此次座標是否為頁面絕對座標
       coordsArePageSpace = isPageCoords === true;
 
       document.querySelectorAll('.ftab').forEach(t => t.classList.remove('active'));
@@ -300,7 +355,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     targetSelectorInput, targetXpathInput, targetSearchText,
     useCoordsToggle, coordXInput, coordYInput,
     useShadowDomToggle, useIframeSearchToggle, useCoordFallbackToggle,
-    repeatCountInput, repeatIntervalInput, useCdpToggle
+    repeatCountInput, repeatIntervalInput, useCdpToggle,
+    useSystemMouseToggle, pollDurationInput
   ].filter(Boolean).forEach(el => {
     el.addEventListener('input', saveCurrentConfig);
     el.addEventListener('change', saveCurrentConfig);
@@ -309,9 +365,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // ────────────────────────────────────────────────
   // 8. 立即測試點擊
   // ────────────────────────────────────────────────
-  btnTestClick.addEventListener('click', () => {
+  btnTestClick.addEventListener('click', async () => {
     if (!currentTab || !currentTab.id) return;
     const config = collectCurrentConfig();
+    if (config.useCdp || (currentDomain && currentDomain.includes('ticketplus.com.tw'))) {
+      await new Promise(r => chrome.runtime.sendMessage({ action: 'PRE_ATTACH_CDP', payload: { tabId: currentTab.id } }, r));
+    }
     chrome.tabs.sendMessage(currentTab.id, { action: 'TEST_CLICK', payload: config }, () => {
       if (chrome.runtime.lastError) {
         alert('無法發送測試點擊，請確認該網頁已重新整理且允許擴充功能。');
@@ -353,6 +412,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       timezoneLabel: tzSelect.options[tzSelect.selectedIndex].text
     };
 
+    if (config.useCdp || (currentDomain && currentDomain.includes('ticketplus.com.tw'))) {
+      chrome.runtime.sendMessage({ action: 'PRE_ATTACH_CDP', payload: { tabId: currentTab.id } });
+    }
+
     chrome.tabs.sendMessage(currentTab.id, { action: 'START_COUNTDOWN', payload }, () => {
       if (chrome.runtime.lastError) {
         alert('啟動失敗：請先重新整理目標網頁以載入點擊腳本！');
@@ -366,6 +429,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   btnStopCountdown.addEventListener('click', () => {
     if (!currentTab || !currentTab.id) return;
+    chrome.runtime.sendMessage({ action: 'DETACH_CDP', payload: { tabId: currentTab.id } });
     chrome.tabs.sendMessage(currentTab.id, { action: 'STOP_COUNTDOWN' }, () => {
       statusBanner.className = 'status-banner';
       statusBannerText.textContent = '⏹ 倒數已終止';
@@ -537,8 +601,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    // 按 delayMs 排序後發送
-    const sortedTargets = [...multiTargets].sort((a, b) => (a.delayMs || 0) - (b.delayMs || 0));
+    // 按 delayMs 排序後發送，並確保頂層之 useCdp 與 useSystemMouse 參數灌注至子目標
+    const sortedTargets = multiTargets.map(t => ({
+      ...t,
+      useCdp: t.useCdp !== undefined ? t.useCdp : config.useCdp,
+      useSystemMouse: t.useSystemMouse !== undefined ? t.useSystemMouse : config.useSystemMouse
+    })).sort((a, b) => (a.delayMs || 0) - (b.delayMs || 0));
 
     chrome.runtime.sendMessage({
       action: 'SCHEDULE_MULTI_CLICK',
@@ -546,7 +614,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         tabId: currentTab.id,
         targets: sortedTargets,
         targetEpoch,
-        offset: TimeSync.offset
+        offset: TimeSync.offset,
+        useCdp: config.useCdp,
+        useSystemMouse: config.useSystemMouse
       }
     }, (res) => {
       if (chrome.runtime.lastError || !res || !res.success) {
@@ -560,6 +630,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   btnStopMultiCountdown.addEventListener('click', () => {
     if (!currentTab || !currentTab.id) return;
+    chrome.runtime.sendMessage({ action: 'DETACH_CDP', payload: { tabId: currentTab.id } });
     chrome.tabs.sendMessage(currentTab.id, { action: 'STOP_COUNTDOWN' }, () => {
       statusBanner.className = 'status-banner';
       statusBannerText.textContent = '⏹ 多目標倒數已終止';
@@ -712,6 +783,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       coords: {
         x: parseInt(coordXInput?.value, 10) || 0,
         y: parseInt(coordYInput?.value, 10) || 0,
+        screenX: targetElementInfo?.coords?.screenX,
+        screenY: targetElementInfo?.coords?.screenY,
+        physicalX: targetElementInfo?.coords?.physicalX,
+        physicalY: targetElementInfo?.coords?.physicalY,
+        viewportX: targetElementInfo?.coords?.viewportX,
+        viewportY: targetElementInfo?.coords?.viewportY,
         isPageCoords: coordsArePageSpace
       },
       useShadowDom: useShadowDomToggle?.checked || false,
@@ -720,6 +797,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       repeat: parseInt(repeatCountInput.value, 10) || 1,
       interval: parseInt(repeatIntervalInput.value, 10) || 50,
       useCdp: useCdpToggle?.checked || false,
+      useSystemMouse: useSystemMouseToggle?.checked || false,
+      pollDuration: parseInt(pollDurationInput?.value, 10) || (currentDomain && currentDomain.includes('ticketplus.com.tw') ? 3000 : 2000),
       targetPreview: targetPreviewText.textContent
     };
   }
@@ -746,6 +825,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const res = await chrome.storage.local.get([`site_${domain}`, 'multi_targets']);
       const cfg = res[`site_${domain}`];
+      const isTpDomain = domain.includes('ticketplus.com.tw');
+
+      if (isTpDomain) {
+        if (targetSelectorInput && !targetSelectorInput.value) {
+          targetSelectorInput.placeholder = 'button.v-btn 或輸入「立即購票」';
+        }
+        if (targetSearchText && !targetSearchText.value) {
+          targetSearchText.value = '立即購票';
+        }
+      }
+
       if (cfg) {
         if (cfg.timezone) { selectedTimezone = cfg.timezone; tzSelect.value = cfg.timezone; }
         if (cfg.activeTab) {
@@ -772,7 +862,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (useCoordFallbackToggle && cfg.useCoordFallback !== undefined) useCoordFallbackToggle.checked = cfg.useCoordFallback;
         if (cfg.repeat) repeatCountInput.value = cfg.repeat;
         if (cfg.interval) repeatIntervalInput.value = cfg.interval;
-        if (useCdpToggle && cfg.useCdp !== undefined) useCdpToggle.checked = cfg.useCdp;
+        if (useCdpToggle) {
+          useCdpToggle.checked = cfg.useCdp !== undefined ? cfg.useCdp : isTpDomain;
+        }
+        if (useSystemMouseToggle && cfg.useSystemMouse !== undefined) useSystemMouseToggle.checked = cfg.useSystemMouse;
+        if (pollDurationInput && cfg.pollDuration !== undefined) pollDurationInput.value = cfg.pollDuration;
+      } else if (isTpDomain) {
+        if (useCdpToggle) useCdpToggle.checked = true;
       }
 
       // 恢復多目標清單

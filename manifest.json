@@ -25,7 +25,8 @@
     "activeTab",
     "tabs",
     "scripting",
-    "debugger"
+    "debugger",
+    "nativeMessaging"
   ],
   "host_permissions": [
     "<all_urls>"
