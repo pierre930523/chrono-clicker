@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <title>ChronoClicker - 測試頁面</title>
+  <title>ChronoClicker - 全功能測試沙盒</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -12,10 +12,11 @@
       padding: 30px;
     }
     h1 { font-size: 22px; color: #38bdf8; margin-bottom: 6px; }
-    .subtitle { font-size: 12px; color: #64748b; margin-bottom: 30px; }
+    .subtitle { font-size: 12px; color: #64748b; margin-bottom: 24px; }
     .section { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 20px; margin-bottom: 20px; }
-    .section-title { font-size: 14px; font-weight: 700; color: #94a3b8; margin-bottom: 14px; }
-    .btn-group { display: flex; gap: 12px; flex-wrap: wrap; }
+    .section-title { font-size: 14px; font-weight: 700; color: #94a3b8; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; }
+    .badge-tag { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; font-weight: normal; }
+    .btn-group { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
     button {
       padding: 10px 20px;
       border: none;
@@ -31,21 +32,14 @@
       font-size: 16px;
       padding: 14px 28px;
       box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);
-      id: "mainBtn";
     }
     #mainBtn:hover { filter: brightness(1.15); transform: scale(1.03); }
-    #react-like-btn {
-      background: #0ea5e9;
-      color: #fff;
-    }
-    #form-submit-btn {
-      background: #6366f1;
-      color: #fff;
-    }
-    #trust-btn {
-      background: #f59e0b;
-      color: #000;
-    }
+    #react-like-btn { background: #0ea5e9; color: #fff; }
+    #form-submit-btn { background: #6366f1; color: #fff; }
+    #trust-btn { background: #f59e0b; color: #000; }
+    .step-btn { background: #334155; color: #e2e8f0; border: 1px solid #475569; }
+    .step-btn.clicked { background: #047857; color: #fff; border-color: #10b981; }
+
     .log-panel {
       background: #020617;
       border: 1px solid #1e3a5f;
@@ -53,14 +47,16 @@
       padding: 14px;
       font-family: monospace;
       font-size: 12px;
-      height: 200px;
+      height: 220px;
       overflow-y: auto;
       color: #7dd3fc;
     }
-    .log-entry { padding: 2px 0; border-bottom: 1px solid #0f2040; }
+    .log-entry { padding: 3px 0; border-bottom: 1px solid #0f2040; }
     .log-entry.success { color: #4ade80; }
     .log-entry.trigger { color: #f9a8d4; font-weight: bold; }
     .log-entry.warn { color: #facc15; }
+    .log-entry.step { color: #67e8f9; font-weight: 600; }
+
     .info-bar { 
       display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px;
       background: #0f172a; padding: 12px 16px; border-radius: 8px;
@@ -78,11 +74,67 @@
     }
     .trusted { background: rgba(16, 185, 129, 0.2); color: #10b981; }
     .not-trusted { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+
+    .captcha-box {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      background: #090d16;
+      padding: 14px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+    }
+    #captchaCanvas {
+      background: #fff;
+      border-radius: 4px;
+      border: 1px solid #94a3b8;
+      cursor: pointer;
+    }
+    .captcha-input {
+      background: #0f172a;
+      border: 1px solid #38bdf8;
+      color: #f8fafc;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 16px;
+      letter-spacing: 2px;
+      width: 140px;
+      text-transform: uppercase;
+    }
+
+    .scroll-spacer {
+      height: 900px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: repeating-linear-gradient(
+        45deg,
+        rgba(255, 255, 255, 0.01),
+        rgba(255, 255, 255, 0.01) 20px,
+        rgba(255, 255, 255, 0.02) 20px,
+        rgba(255, 255, 255, 0.02) 40px
+      );
+      border: 1px dashed #334155;
+      border-radius: 8px;
+      margin: 20px 0;
+      color: #64748b;
+      font-size: 13px;
+    }
+    #deepScrollBtn {
+      background: linear-gradient(135deg, #ec4899, #be185d);
+      color: #fff;
+      padding: 16px 32px;
+      font-size: 16px;
+      box-shadow: 0 4px 20px rgba(236, 72, 153, 0.4);
+    }
   </style>
 </head>
 <body>
   <h1>⚡ ChronoClicker 測試沙盒</h1>
-  <p class="subtitle">使用此頁面驗證擴充功能的元素選取、定時精度與事件觸發相容性</p>
+  <p class="subtitle">驗證精確座標、頁面滾動補償、多目標組合連點、AI 驗證碼識別與 isTrusted 原生事件</p>
 
   <!-- 即時資訊橫幅 -->
   <div class="info-bar">
@@ -95,64 +147,126 @@
       <span class="info-val" id="totalClicks">0</span>
     </div>
     <div class="info-item">
-      <span class="info-label">最後點擊時間</span>
-      <span class="info-val" id="lastClickTime">--</span>
+      <span class="info-label">最後點擊目標</span>
+      <span class="info-val" id="lastClickTarget">--</span>
     </div>
     <div class="info-item">
       <span class="info-label">最後事件 isTrusted</span>
       <span id="lastIsTrusted">--</span>
     </div>
+    <div class="info-item">
+      <span class="info-label">目前卷軸位置 (ScrollY)</span>
+      <span class="info-val" id="scrollPos">0 px</span>
+    </div>
   </div>
 
-  <!-- 主要測試按鈕 -->
+  <!-- 1. 主要單點測試按鈕 -->
   <div class="section">
-    <div class="section-title">🎯 主要觸發目標 (選這個用於測試)</div>
+    <div class="section-title">
+      <span>🎯 1. 單點基準測試目標</span>
+      <span class="badge-tag">標準 Selector / 座標</span>
+    </div>
     <div class="btn-group">
       <button id="mainBtn" onclick="handleClick(event, '主要按鈕 #mainBtn')">
-        ✅ 主要目標按鈕
+        ✅ 主要目標按鈕 (#mainBtn)
       </button>
       <button id="react-like-btn" onclick="handleClick(event, 'React-like 按鈕')">
         ⚛️ React-like Button
       </button>
+      <button id="trust-btn" onclick="handleClick(event, 'isTrusted 檢驗按鈕')">
+        🔒 isTrusted 檢驗按鈕
+      </button>
     </div>
   </div>
 
-  <!-- 表單測試 -->
+  <!-- 2. 多目標組合點擊測試 -->
   <div class="section">
-    <div class="section-title">📝 表單提交測試</div>
-    <form id="testForm" onsubmit="handleFormSubmit(event)">
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <input type="text" placeholder="測試輸入欄..." 
-               style="background:#0f172a;border:1px solid #334155;color:#f1f5f9;padding:8px 12px;border-radius:6px;font-size:13px;flex:1">
-        <button type="submit" id="form-submit-btn">提交表單</button>
-      </div>
-    </form>
-  </div>
-
-  <!-- isTrusted 驗證區 -->
-  <div class="section">
-    <div class="section-title">🔒 isTrusted 事件驗證 (反機器人偵測模擬)</div>
-    <div class="btn-group">
-      <button id="trust-btn" onclick="checkTrusted(event)">點擊驗證 isTrusted</button>
+    <div class="section-title">
+      <span>🔀 2. 多目標組合連點測試 (Multi-Target Combo)</span>
+      <span class="badge-tag">功能 A：依序自動點擊</span>
     </div>
-    <p style="font-size:11px;color:#64748b;margin-top:10px;">
-      • 標準 DOM 模擬點擊 → <code style="color:#f87171">isTrusted: false</code><br>
-      • CDP 原生可信點擊（啟用後） → <code style="color:#4ade80">isTrusted: true</code>
+    <p style="font-size:12px;color:#94a3b8;margin-bottom:12px;">
+      可在 ChronoClicker 彈窗切換至「🔀 多目標點擊」，依序新增以下三個目標（如 T+0ms、T+200ms、T+500ms），測試排程自動觸發與拖曳重排：
     </p>
+    <div class="btn-group">
+      <button id="step1Btn" class="step-btn" onclick="handleStepClick(event, 1)">
+        ① 步驟一：選擇票種 (#step1Btn)
+      </button>
+      <span style="color:#64748b">➔</span>
+      <button id="step2Btn" class="step-btn" onclick="handleStepClick(event, 2)">
+        ② 步驟二：確認張數 (#step2Btn)
+      </button>
+      <span style="color:#64748b">➔</span>
+      <button id="step3Btn" class="step-btn" onclick="handleStepClick(event, 3)">
+        ③ 步驟三：立即下單 (#step3Btn)
+      </button>
+      <button onclick="resetSteps()" style="background:#334155;color:#94a3b8;font-size:11px;padding:6px 10px;">重設步驟</button>
+    </div>
+  </div>
+
+  <!-- 3. AI 驗證碼識別與自動填入測試 -->
+  <div class="section">
+    <div class="section-title">
+      <span>🤖 3. 圖片驗證碼測試區 (CAPTCHA Solver)</span>
+      <span class="badge-tag">功能 B：大模型視覺識別</span>
+    </div>
+    <p style="font-size:12px;color:#94a3b8;margin-bottom:12px;">
+      此處為模擬真實購物網站的 4 位英數圖片驗證碼。在擴充功能中設定 API Key 後點擊「🤖 自動識別並填入」，將截圖自動解題並填入輸入框：
+    </p>
+    <div class="captcha-box">
+      <canvas id="captchaCanvas" width="140" height="42" title="點擊換一張驗證碼" onclick="generateCaptcha()"></canvas>
+      <button type="button" onclick="generateCaptcha()" style="background:#1e293b;color:#38bdf8;border:1px solid #38bdf8;padding:6px 12px;font-size:12px;">🔄 換一張</button>
+      <input type="text" id="captchaInput" name="captcha" class="captcha-input" placeholder="驗證碼" maxlength="6" autocomplete="off" oninput="verifyCaptcha()">
+      <span id="captchaStatus" style="font-size:13px;font-weight:bold;color:#94a3b8;">等待輸入...</span>
+    </div>
+  </div>
+
+  <!-- 4. 長頁面滾動與精準座標測試 -->
+  <div class="section">
+    <div class="section-title">
+      <span>📜 4. 滾動長頁面座標補償測試</span>
+      <span class="badge-tag">向下滾動 900px 測試絕對座標捕獲</span>
+    </div>
+    <p style="font-size:12px;color:#94a3b8;">
+      下方有一段 900px 的長距離間隔。請向下滾動後使用「🎯 選擇網頁元素」或「📍 擷取座標」點擊下方深層粉紅按鈕。測試在頁面未滾動或滾動位置不同時，觸發點擊是否仍能精準命中目標！
+    </p>
+  </div>
+
+  <!-- 模擬長頁面間隔 -->
+  <div class="scroll-spacer">
+    <div>⬇️ 請向下滾動 ⬇️</div>
+    <div style="margin-top:8px;font-size:11px;color:#475569;">（此區域測試在不同滾動高度下，座標是否會漂移）</div>
+  </div>
+
+  <!-- 深層按鈕 -->
+  <div class="section" style="border-color:#ec4899;">
+    <div class="section-title" style="color:#f472b6;">
+      <span>🎯 深層滾動目標 (已滾動 ~1000px)</span>
+      <span class="badge-tag" style="background:rgba(236,72,153,0.2);color:#f472b6;">深層目標</span>
+    </div>
+    <div class="btn-group">
+      <button id="deepScrollBtn" onclick="handleClick(event, '深層滾動按鈕 #deepScrollBtn')">
+        🔥 深層按鈕：立即搶購 (#deepScrollBtn)
+      </button>
+      <button onclick="window.scrollTo({top:0,behavior:'smooth'})" style="background:#334155;color:#94a3b8;font-size:12px;">⬆️ 回到頂部</button>
+    </div>
   </div>
 
   <!-- 事件日誌 -->
   <div class="section">
-    <div class="section-title">📜 觸發事件日誌</div>
-    <div class="log-panel" id="logPanel">
-      <div class="log-entry">等待事件觸發...</div>
+    <div class="section-title">
+      <span>📜 觸發事件日誌</span>
+      <button onclick="clearLog()" style="background:#334155;color:#94a3b8;font-size:11px;padding:4px 8px;">清除日誌</button>
     </div>
-    <button onclick="clearLog()" style="margin-top:8px;background:#334155;color:#94a3b8;font-size:11px;padding:5px 10px;">清除日誌</button>
+    <div class="log-panel" id="logPanel">
+      <div class="log-entry">沙盒已就緒，等待點擊或定時排程事件...</div>
+    </div>
   </div>
 
   <script>
     let totalClicks = 0;
-    
+    let currentCaptchaText = '';
+
     function now() {
       return new Date().toISOString().replace('T', ' ').replace('Z', '');
     }
@@ -172,34 +286,91 @@
 
     function handleClick(event, label) {
       totalClicks++;
-      const ts = performance.now().toFixed(3);
+      const ts = performance.now().toFixed(2);
       document.getElementById('totalClicks').textContent = totalClicks;
-      document.getElementById('lastClickTime').textContent = now().split(' ')[1];
-      
+      document.getElementById('lastClickTarget').textContent = label;
+
       const trusted = event.isTrusted;
       const badge = trusted 
         ? '<span class="trust-badge trusted">isTrusted ✓</span>' 
         : '<span class="trust-badge not-trusted">isTrusted ✗</span>';
       document.getElementById('lastIsTrusted').innerHTML = badge;
 
-      log(`🎯 ${label} 被點擊！ isTrusted=${trusted} | perf.now=${ts}ms | 計數=${totalClicks}`, 'trigger');
+      log(`🎯 [${label}] 被點擊！ isTrusted=${trusted} | perf=${ts}ms | clientX=${event.clientX}, clientY=${event.clientY}`, 'trigger');
     }
 
-    function handleFormSubmit(event) {
-      event.preventDefault();
-      log(`📝 表單提交事件觸發！ isTrusted=${event.isTrusted}`, 'success');
+    function handleStepClick(event, stepNum) {
+      const btn = event.currentTarget;
+      btn.classList.add('clicked');
+      log(`🔀 多目標步驟 [${stepNum}] 觸發成功！`, 'step');
+      handleClick(event, `步驟 ${stepNum}`);
     }
 
-    function checkTrusted(event) {
-      log(`🔒 isTrusted 驗證: ${event.isTrusted ? '✅ TRUSTED (真實使用者)' : '❌ NOT TRUSTED (程式模擬)'}`, 
-          event.isTrusted ? 'success' : 'warn');
+    function resetSteps() {
+      document.querySelectorAll('.step-btn').forEach(b => b.classList.remove('clicked'));
+      log('多目標步驟按鈕狀態已重設');
     }
 
-    // 監聽所有點擊事件（含擴充功能模擬的）
-    document.addEventListener('click', (e) => {
-      if (!e.target.closest('button') && !e.target.closest('input')) return;
-      if (e.target.closest('#logPanel')) return;
-    }, true);
+    // 隨機生成 4 碼圖片驗證碼
+    function generateCaptcha() {
+      const canvas = document.getElementById('captchaCanvas');
+      const ctx = canvas.getContext('2d');
+      const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+      let code = '';
+      for (let i = 0; i < 4; i++) {
+        code += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      currentCaptchaText = code;
+
+      // 繪製背景與干擾線
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      for (let i = 0; i < 5; i++) {
+        ctx.strokeStyle = `hsl(${Math.random() * 360}, 70%, 75%)`;
+        ctx.beginPath();
+        ctx.moveTo(Math.random() * canvas.width, Math.random() * canvas.height);
+        ctx.lineTo(Math.random() * canvas.width, Math.random() * canvas.height);
+        ctx.stroke();
+      }
+
+      // 繪製文字
+      ctx.font = 'bold 24px monospace';
+      for (let i = 0; i < 4; i++) {
+        ctx.fillStyle = `hsl(${Math.random() * 360}, 80%, 35%)`;
+        ctx.save();
+        ctx.translate(20 + i * 28, 28);
+        ctx.rotate((Math.random() - 0.5) * 0.4);
+        ctx.fillText(code[i], 0, 0);
+        ctx.restore();
+      }
+
+      document.getElementById('captchaInput').value = '';
+      document.getElementById('captchaStatus').textContent = '等待輸入...';
+      document.getElementById('captchaStatus').style.color = '#94a3b8';
+      log(`新驗證碼已生成 (答案: ${code})`, 'warn');
+    }
+
+    function verifyCaptcha() {
+      const inputVal = document.getElementById('captchaInput').value.trim().toUpperCase();
+      const status = document.getElementById('captchaStatus');
+      if (inputVal === currentCaptchaText) {
+        status.textContent = '✅ 驗證通過！';
+        status.style.color = '#4ade80';
+        log(`🎉 驗證碼正確填入: ${inputVal}`, 'success');
+      } else if (inputVal.length >= 4) {
+        status.textContent = '❌ 驗證碼不相符';
+        status.style.color = '#ef4444';
+      } else {
+        status.textContent = '輸入中...';
+        status.style.color = '#94a3b8';
+      }
+    }
+
+    // 追蹤 Scroll 位置
+    window.addEventListener('scroll', () => {
+      document.getElementById('scrollPos').textContent = `${Math.round(window.scrollY)} px`;
+    });
 
     // 即時時鐘
     function updateClock() {
@@ -208,7 +379,9 @@
     }
     updateClock();
 
-    log('✅ 測試頁面已載入，ChronoClicker 擴充功能可在此頁面進行完整測試');
+    // 初始生成驗證碼
+    generateCaptcha();
+    log('✅ 測試沙盒載入完畢，已啟用座標卷軸追蹤與 CAPTCHA 模擬');
   </script>
 </body>
 </html>

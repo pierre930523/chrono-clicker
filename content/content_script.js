@@ -395,7 +395,18 @@
 
     // 6️⃣ 座標 elementFromPoint 備案
     if (coords && coords.x !== undefined && coords.y !== undefined) {
-      // 若儲存的是頁面絕對座標，需轉換回視窗座標
+      // 若儲存的是頁面絕對座標，檢查是否在目前視窗內；若不在則自動滾動使其可視
+      if (coords.isPageCoords) {
+        const currentVy = coords.y - window.scrollY;
+        const currentVx = coords.x - window.scrollX;
+        if (currentVy < 0 || currentVy > window.innerHeight || currentVx < 0 || currentVx > window.innerWidth) {
+          window.scrollTo({
+            left: Math.max(0, coords.x - window.innerWidth / 2),
+            top: Math.max(0, coords.y - window.innerHeight / 2),
+            behavior: 'instant'
+          });
+        }
+      }
       const vx = coords.isPageCoords ? coords.x - window.scrollX : coords.x;
       const vy = coords.isPageCoords ? coords.y - window.scrollY : coords.y;
       const el = document.elementFromPoint(vx, vy);
@@ -432,9 +443,20 @@
 
     // 終極備案：純螢幕座標 CDP 點擊（不需 DOM 元素）
     // CDP Input.dispatchMouseEvent 使用視窗座標 (viewport)，
-    // 若儲存的是頁面絕對座標，需在此時減去捲軸偏移量轉換為視窗座標。
+    // 若儲存的是頁面絕對座標，若超出視窗則先滾動使其可視，再轉換為視窗座標。
     if (resolved.isCoordOnly) {
       if (hudElement) updateHUDStatus('🖱️ CDP 座標點擊觸發！', '#f59e0b');
+      if (coords && coords.isPageCoords) {
+        const currentVy = coords.y - window.scrollY;
+        const currentVx = coords.x - window.scrollX;
+        if (currentVy < 0 || currentVy > window.innerHeight || currentVx < 0 || currentVx > window.innerWidth) {
+          window.scrollTo({
+            left: Math.max(0, coords.x - window.innerWidth / 2),
+            top: Math.max(0, coords.y - window.innerHeight / 2),
+            behavior: 'instant'
+          });
+        }
+      }
       const vx = coords.isPageCoords ? coords.x - window.scrollX : coords.x;
       const vy = coords.isPageCoords ? coords.y - window.scrollY : coords.y;
       for (let i = 0; i < repeat; i++) {
@@ -458,11 +480,25 @@
     console.log('[ChronoClicker] Triggering clicks on target:', targetEl);
     if (hudElement) updateHUDStatus('🎯 已精準觸發點擊！', '#10b981');
 
-    // 修正：永遠從元素目前的 getBoundingClientRect() 重新計算中心座標，
-    // 避免使用拾取當下已過時的 coords.x/y（頁面滾動後座標會錯位）。
+    // 確保元素進入可視範圍中心，避免點擊座標溢出視窗
+    const currentRect = targetEl.getBoundingClientRect();
+    if (
+      currentRect.top < 0 ||
+      currentRect.bottom > window.innerHeight ||
+      currentRect.left < 0 ||
+      currentRect.right > window.innerWidth
+    ) {
+      try {
+        targetEl.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
+      } catch (e) {
+        targetEl.scrollIntoView(true);
+      }
+    }
+
+    // 重新取得可視範圍內精準的中心座標
     const rect = targetEl.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
+    const cx = Math.round(rect.left + rect.width / 2);
+    const cy = Math.round(rect.top + rect.height / 2);
 
     // 視覺高亮反饋
     targetEl.classList.add('chrono-click-flash');
@@ -828,7 +864,7 @@
       }
     };
 
-    const onClick = (e) =\u003e {
+    const onClick = (e) => {
       e.preventDefault();
       e.stopPropagation();
       // 儲存頁面絕對座標（clientX + scrollX），不因卷軸變化而失效
@@ -846,8 +882,8 @@
       const flash = document.createElement('div');
       Object.assign(flash.style, {
         position: 'fixed',
-        left: `${x - 12}px`,
-        top: `${y - 12}px`,
+        left: `${e.clientX - 12}px`,
+        top: `${e.clientY - 12}px`,
         width: '24px',
         height: '24px',
         borderRadius: '50%',
