@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ChronoClicker - 高精準世界時間倒數點擊器",
-  "version": "1.0.0",
-  "description": "支援全球地區時區轉換、原子鐘微秒級校準、網頁可視化元素拾取與極限精度倒數定時點擊。",
+  "version": "1.1.0",
+  "description": "支援全球地區時區轉換、原子鐘微秒級校準、多目標序列點擊、AI驗證碼自動解析與極限精度倒數定時點擊。",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -23,6 +23,7 @@
   "permissions": [
     "storage",
     "activeTab",
+    "tabs",
     "scripting",
     "debugger"
   ],

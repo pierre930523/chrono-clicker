@@ -97,9 +97,11 @@
 
     const selector = generateOptimalSelector(target);
     const rect = target.getBoundingClientRect();
+    // 儲存頁面絕對座標（加上卷軸偏移），觸發時再轉換回視窗座標
     const coords = {
-      x: Math.round(rect.left + rect.width / 2),
-      y: Math.round(rect.top + rect.height / 2)
+      x: Math.round(rect.left + rect.width / 2 + window.scrollX),
+      y: Math.round(rect.top + rect.height / 2 + window.scrollY),
+      isPageCoords: true  // 標記為頁面絕對座標
     };
     const summary = {
       tagName: target.tagName.toLowerCase(),
@@ -393,9 +395,12 @@
 
     // 6️⃣ 座標 elementFromPoint 備案
     if (coords && coords.x !== undefined && coords.y !== undefined) {
-      const el = document.elementFromPoint(coords.x, coords.y);
+      // 若儲存的是頁面絕對座標，需轉換回視窗座標
+      const vx = coords.isPageCoords ? coords.x - window.scrollX : coords.x;
+      const vy = coords.isPageCoords ? coords.y - window.scrollY : coords.y;
+      const el = document.elementFromPoint(vx, vy);
       if (el && el !== document.body && el !== document.documentElement) {
-        return { el, method: '座標拾取 (elementFromPoint)' };
+        return { el, method: '座標拾取 (elementFromPoint)', viewportX: vx, viewportY: vy };
       }
     }
 
@@ -426,15 +431,19 @@
     if (hudElement) updateHUDStatus(`🎯 觸發中 (${resolved.method})`, '#10b981');
 
     // 終極備案：純螢幕座標 CDP 點擊（不需 DOM 元素）
+    // CDP Input.dispatchMouseEvent 使用視窗座標 (viewport)，
+    // 若儲存的是頁面絕對座標，需在此時減去捲軸偏移量轉換為視窗座標。
     if (resolved.isCoordOnly) {
       if (hudElement) updateHUDStatus('🖱️ CDP 座標點擊觸發！', '#f59e0b');
+      const vx = coords.isPageCoords ? coords.x - window.scrollX : coords.x;
+      const vy = coords.isPageCoords ? coords.y - window.scrollY : coords.y;
       for (let i = 0; i < repeat; i++) {
         setTimeout(() => {
           chrome.runtime.sendMessage({
             action: 'DISPATCH_CDP_CLICK',
             payload: {
-              x: coords.x,
-              y: coords.y,
+              x: vx,
+              y: vy,
               repeat: 1,
               interval: 0
             }
@@ -449,10 +458,11 @@
     console.log('[ChronoClicker] Triggering clicks on target:', targetEl);
     if (hudElement) updateHUDStatus('🎯 已精準觸發點擊！', '#10b981');
 
-    // 取得點擊目標中心座標
+    // 修正：永遠從元素目前的 getBoundingClientRect() 重新計算中心座標，
+    // 避免使用拾取當下已過時的 coords.x/y（頁面滾動後座標會錯位）。
     const rect = targetEl.getBoundingClientRect();
-    const cx = coords && coords.x ? coords.x : (rect.left + rect.width / 2);
-    const cy = coords && coords.y ? coords.y : (rect.top + rect.height / 2);
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
 
     // 視覺高亮反饋
     targetEl.classList.add('chrono-click-flash');
@@ -619,7 +629,10 @@
       target = document.querySelector(currentSchedule.selector);
     }
     if (!target && currentSchedule.coords) {
-      target = document.elementFromPoint(currentSchedule.coords.x, currentSchedule.coords.y);
+      const c = currentSchedule.coords;
+      const vx = c.isPageCoords ? c.x - window.scrollX : c.x;
+      const vy = c.isPageCoords ? c.y - window.scrollY : c.y;
+      target = document.elementFromPoint(vx, vy);
     }
     if (target) {
       target.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -709,6 +722,42 @@
       sendResponse({ success: true });
       return false;
     }
+
+    // 多目標依序點擊（功能 A）
+    if (action === 'EXECUTE_MULTI_CLICK') {
+      const { targets } = payload;
+      if (!Array.isArray(targets) || targets.length === 0) {
+        sendResponse({ success: false, error: '無點擊目標' });
+        return false;
+      }
+      targets.forEach((t) => {
+        setTimeout(() => {
+          executeScheduledClick({
+            ...t,
+            repeat: t.repeat || 1,
+            interval: t.interval || 50,
+            useCdp: t.useCdp || false
+          });
+        }, t.delayMs || 0);
+      });
+      sendResponse({ success: true });
+      return false;
+    }
+
+    // 驗證碼填入（功能 B）
+    if (action === 'CAPTCHA_FILL_ANSWER') {
+      const { answer } = payload;
+      const filled = tryCaptchaFill(answer);
+      sendResponse({ success: filled });
+      return false;
+    }
+
+    // 偵測頁面驗證碼存在（功能 B）
+    if (action === 'DETECT_CAPTCHA') {
+      const detected = detectCaptchaPresence();
+      sendResponse({ detected: !!detected, type: detected ? detected.type : null });
+      return false;
+    }
   });
 
   // ----------------------------------------------------
@@ -779,17 +828,18 @@
       }
     };
 
-    const onClick = (e) => {
+    const onClick = (e) =\u003e {
       e.preventDefault();
       e.stopPropagation();
-      const x = e.clientX;
-      const y = e.clientY;
+      // 儲存頁面絕對座標（clientX + scrollX），不因卷軸變化而失效
+      const x = e.clientX + window.scrollX;
+      const y = e.clientY + window.scrollY;
       cleanup();
 
       // 回報座標給 popup
       chrome.runtime.sendMessage({
         action: 'COORD_CAPTURED',
-        payload: { x, y }
+        payload: { x, y, isPageCoords: true }
       });
 
       // 視覺確認閃光
@@ -826,6 +876,62 @@
     document.addEventListener('mousemove', onMouseMove, true);
     document.addEventListener('click', onClick, true);
     document.addEventListener('keydown', onKeyDown, true);
+  }
+
+  // ----------------------------------------------------
+  // 驗證碼偵測與填入輔助函式（功能 B）
+  // ----------------------------------------------------
+
+  /**
+   * 偵測頁面上是否存在常見驗證碼元素。
+   * 回傳 { type, element } 或 null。
+   */
+  function detectCaptchaPresence() {
+    // reCAPTCHA v2
+    const recaptchaFrame = document.querySelector('iframe[src*="recaptcha"]');
+    if (recaptchaFrame) return { type: 'reCAPTCHA', element: recaptchaFrame };
+
+    // hCaptcha
+    const hcaptchaFrame = document.querySelector('iframe[src*="hcaptcha"]');
+    if (hcaptchaFrame) return { type: 'hCaptcha', element: hcaptchaFrame };
+
+    // Cloudflare Turnstile
+    const turnstile = document.querySelector('iframe[src*="challenges.cloudflare"]');
+    if (turnstile) return { type: 'Turnstile', element: turnstile };
+
+    // 圖片驗證碼輸入框（常見屬性名）
+    const imgCaptchaInput = document.querySelector(
+      'input[name*="captcha" i], input[id*="captcha" i], input[placeholder*="驗證碼" i], input[placeholder*="captcha" i]'
+    );
+    if (imgCaptchaInput) return { type: 'TextCaptcha', element: imgCaptchaInput };
+
+    return null;
+  }
+
+  /**
+   * 嘗試將 AI 解碼後的驗證碼答案填入對應的輸入框。
+   * 回傳 true 表示成功找到並填入。
+   */
+  function tryCaptchaFill(answer) {
+    if (!answer) return false;
+    const input = document.querySelector(
+      'input[name*="captcha" i], input[id*="captcha" i], input[placeholder*="驗證碼" i], input[placeholder*="captcha" i], input[autocomplete="off"][type="text"]'
+    );
+    if (input) {
+      // 觸發 React/Vue 兼容的 input 事件
+      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+      if (nativeInputValueSetter) {
+        nativeInputValueSetter.call(input, answer);
+      } else {
+        input.value = answer;
+      }
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      input.classList.add('chrono-click-flash');
+      setTimeout(() => input.classList.remove('chrono-click-flash'), 800);
+      return true;
+    }
+    return false;
   }
 
 })();

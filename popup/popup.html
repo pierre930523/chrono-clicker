@@ -23,188 +23,296 @@
       </div>
     </header>
 
-    <!-- 世界時區選擇與即時時鐘 -->
-    <section class="clock-card">
-      <div class="tz-select-row">
-        <label for="tzSelect">🌍 基準世界時區：</label>
-        <select id="tzSelect" class="styled-select"></select>
-      </div>
-      <div class="clock-display">
-        <div class="clock-time" id="liveClockTime">00:00:00<span class="clock-ms" id="liveClockMs">.000</span></div>
-        <div class="clock-date" id="liveClockDate">2026-00-00</div>
-      </div>
-    </section>
+    <!-- 主分頁切換 -->
+    <div class="main-tabs">
+      <button class="main-tab active" data-main-tab="main">🎯 主要</button>
+      <button class="main-tab" data-main-tab="multi">🔗 多點擊</button>
+      <button class="main-tab" data-main-tab="ai">⚙️ AI 設定</button>
+    </div>
 
-    <!-- 目標時間設定 -->
-    <section class="section-card">
-      <div class="section-title">
-        <span>⏱️ 目標觸發時間</span>
-        <div class="quick-shortcuts">
-          <button type="button" class="btn-chip" id="btnPlus10s">+10秒</button>
-          <button type="button" class="btn-chip" id="btnPlus30s">+30秒</button>
-          <button type="button" class="btn-chip" id="btnPlus1m">+1分</button>
-          <button type="button" class="btn-chip" id="btnNextHour">下一整點</button>
-        </div>
-      </div>
+    <!-- ══════════════════ 主要面板 ══════════════════ -->
+    <div class="main-panel active" id="mainpanel-main">
 
-      <div class="time-inputs-group">
-        <div class="input-col date-col">
-          <label>日期</label>
-          <input type="date" id="targetDate" class="styled-input">
+      <!-- 世界時區選擇與即時時鐘 -->
+      <section class="clock-card">
+        <div class="tz-select-row">
+          <label for="tzSelect">🌍 基準世界時區：</label>
+          <select id="tzSelect" class="styled-select"></select>
         </div>
-        <div class="input-col">
-          <label>時</label>
-          <input type="number" id="targetHour" min="0" max="23" class="styled-input" placeholder="00">
+        <div class="clock-display">
+          <div class="clock-time" id="liveClockTime">00:00:00<span class="clock-ms" id="liveClockMs">.000</span></div>
+          <div class="clock-date" id="liveClockDate">2026-00-00</div>
         </div>
-        <span class="time-colon">:</span>
-        <div class="input-col">
-          <label>分</label>
-          <input type="number" id="targetMinute" min="0" max="59" class="styled-input" placeholder="00">
-        </div>
-        <span class="time-colon">:</span>
-        <div class="input-col">
-          <label>秒</label>
-          <input type="number" id="targetSecond" min="0" max="59" class="styled-input" placeholder="00">
-        </div>
-        <span class="time-colon">.</span>
-        <div class="input-col ms-col">
-          <label>毫秒</label>
-          <input type="number" id="targetMs" min="0" max="999" class="styled-input" placeholder="000">
-        </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- 點擊目標設定 -->
-    <section class="section-card">
-      <div class="section-title">
-        <span>🎯 點擊目標與網頁配置</span>
-        <span class="domain-tag" id="currentDomainBadge">當前網頁</span>
-      </div>
-
-      <div class="picker-action-row">
-        <button type="button" class="btn-picker" id="btnStartPicker">
-          <span class="btn-icon">🎯</span> 點擊選取網頁元素
-        </button>
-        <button type="button" class="btn-secondary" id="btnTestClick" title="立即在網頁上模擬測試此點擊">
-          ⚡ 測試點擊
-        </button>
-      </div>
-
-      <div class="target-details" id="targetDetailsBox">
-        <div class="detail-row">
-          <span class="detail-label">目標預覽:</span>
-          <span class="detail-value" id="targetPreviewText">尚未選取 (點擊上方按鈕選取)</span>
-        </div>
-
-        <!-- 備案解析策略 Tab 切換 -->
-        <div class="fallback-tabs" id="fallbackTabs">
-          <button class="ftab active" data-tab="css">CSS Selector</button>
-          <button class="ftab" data-tab="xpath">XPath</button>
-          <button class="ftab" data-tab="text">文字搜尋</button>
-          <button class="ftab" data-tab="coord">螢幕座標</button>
-        </div>
-
-        <!-- CSS Selector 面板 -->
-        <div class="ftab-panel active" id="fpanel-css">
-          <div class="detail-row selector-row">
-            <span class="detail-label">Selector:</span>
-            <input type="text" id="targetSelectorInput" class="styled-input code-input" placeholder="#btn-buy, .submit-btn, button[data-action='purchase']">
+      <!-- 目標時間設定 -->
+      <section class="section-card">
+        <div class="section-title">
+          <span>⏱️ 目標觸發時間</span>
+          <div class="quick-shortcuts">
+            <button type="button" class="btn-chip" id="btnPlus10s">+10秒</button>
+            <button type="button" class="btn-chip" id="btnPlus30s">+30秒</button>
+            <button type="button" class="btn-chip" id="btnPlus1m">+1分</button>
+            <button type="button" class="btn-chip" id="btnNextHour">下一整點</button>
           </div>
-          <p class="fallback-hint">適用大多數網頁，由視覺選取器自動填入</p>
         </div>
 
-        <!-- XPath 備案面板 -->
-        <div class="ftab-panel" id="fpanel-xpath">
-          <div class="detail-row selector-row">
-            <span class="detail-label">XPath:</span>
-            <input type="text" id="targetXpathInput" class="styled-input code-input" placeholder="//button[contains(text(),'購買')] 或 //input[@id='confirm']">
+        <div class="time-inputs-group">
+          <div class="input-col date-col">
+            <label>日期</label>
+            <input type="date" id="targetDate" class="styled-input">
           </div>
-          <p class="fallback-hint">適用 CSS Selector 失效時；XPath 可依元素文字內容精確定位</p>
+          <div class="input-col">
+            <label>時</label>
+            <input type="number" id="targetHour" min="0" max="23" class="styled-input" placeholder="00">
+          </div>
+          <span class="time-colon">:</span>
+          <div class="input-col">
+            <label>分</label>
+            <input type="number" id="targetMinute" min="0" max="59" class="styled-input" placeholder="00">
+          </div>
+          <span class="time-colon">:</span>
+          <div class="input-col">
+            <label>秒</label>
+            <input type="number" id="targetSecond" min="0" max="59" class="styled-input" placeholder="00">
+          </div>
+          <span class="time-colon">.</span>
+          <div class="input-col ms-col">
+            <label>毫秒</label>
+            <input type="number" id="targetMs" min="0" max="999" class="styled-input" placeholder="000">
+          </div>
+        </div>
+      </section>
+
+      <!-- 點擊目標設定 -->
+      <section class="section-card">
+        <div class="section-title">
+          <span>🎯 點擊目標與網頁配置</span>
+          <span class="domain-tag" id="currentDomainBadge">當前網頁</span>
         </div>
 
-        <!-- 文字搜尋備案面板 -->
-        <div class="ftab-panel" id="fpanel-text">
-          <div class="detail-row selector-row">
-            <span class="detail-label">按鈕文字:</span>
-            <input type="text" id="targetSearchText" class="styled-input code-input" placeholder="輸入按鈕上的文字，例如：立即購買、確認、Buy">
-          </div>
-          <p class="fallback-hint">自動搜尋頁面中所有 button/a/role=button，找出包含此文字的元素</p>
+        <div class="picker-action-row">
+          <button type="button" class="btn-picker" id="btnStartPicker">
+            <span class="btn-icon">🎯</span> 點擊選取網頁元素
+          </button>
+          <button type="button" class="btn-secondary" id="btnTestClick" title="立即在網頁上模擬測試此點擊">
+            ⚡ 測試點擊
+          </button>
         </div>
 
-        <!-- 螢幕座標備案面板 -->
-        <div class="ftab-panel" id="fpanel-coord">
-          <div class="coords-row" style="margin-top:2px;">
-            <label class="checkbox-label">
-              <input type="checkbox" id="useCoordsToggle"> 啟用螢幕座標點擊
-            </label>
+        <div class="target-details" id="targetDetailsBox">
+          <div class="detail-row">
+            <span class="detail-label">目標預覽:</span>
+            <span class="detail-value" id="targetPreviewText">尚未選取 (點擊上方按鈕選取)</span>
           </div>
-          <div class="coords-inputs-full" id="coordsInputBox">
-            <div class="coord-row-full">
-              <span class="coord-label">X:</span>
-              <input type="number" id="coordX" class="mini-input wide-input" placeholder="0">
-              <span class="coord-label">Y:</span>
-              <input type="number" id="coordY" class="mini-input wide-input" placeholder="0">
-              <button type="button" class="btn-chip" id="btnCaptureCoords" title="點擊後，移至目標網頁點一下以擷取座標">📍 擷取</button>
+
+          <!-- 備案解析策略 Tab 切換 -->
+          <div class="fallback-tabs" id="fallbackTabs">
+            <button class="ftab active" data-tab="css">CSS Selector</button>
+            <button class="ftab" data-tab="xpath">XPath</button>
+            <button class="ftab" data-tab="text">文字搜尋</button>
+            <button class="ftab" data-tab="coord">螢幕座標</button>
+          </div>
+
+          <!-- CSS Selector 面板 -->
+          <div class="ftab-panel active" id="fpanel-css">
+            <div class="detail-row selector-row">
+              <span class="detail-label">Selector:</span>
+              <input type="text" id="targetSelectorInput" class="styled-input code-input" placeholder="#btn-buy, .submit-btn, button[data-action='purchase']">
             </div>
-            <p class="fallback-hint warn-hint">⚠️ 此備案不依賴任何 DOM 元素，直接對視窗座標 (X, Y) 派發原生點擊<br>適用：頁面被保護、元素在 canvas 中、或其他所有方式均失敗時</p>
+            <p class="fallback-hint">適用大多數網頁，由視覺選取器自動填入</p>
+          </div>
+
+          <!-- XPath 備案面板 -->
+          <div class="ftab-panel" id="fpanel-xpath">
+            <div class="detail-row selector-row">
+              <span class="detail-label">XPath:</span>
+              <input type="text" id="targetXpathInput" class="styled-input code-input" placeholder="//button[contains(text(),'購買')] 或 //input[@id='confirm']">
+            </div>
+            <p class="fallback-hint">適用 CSS Selector 失效時；XPath 可依元素文字內容精確定位</p>
+          </div>
+
+          <!-- 文字搜尋備案面板 -->
+          <div class="ftab-panel" id="fpanel-text">
+            <div class="detail-row selector-row">
+              <span class="detail-label">按鈕文字:</span>
+              <input type="text" id="targetSearchText" class="styled-input code-input" placeholder="輸入按鈕上的文字，例如：立即購買、確認、Buy">
+            </div>
+            <p class="fallback-hint">自動搜尋頁面中所有 button/a/role=button，找出包含此文字的元素</p>
+          </div>
+
+          <!-- 螢幕座標備案面板 -->
+          <div class="ftab-panel" id="fpanel-coord">
+            <div class="coords-row" style="margin-top:2px;">
+              <label class="checkbox-label">
+                <input type="checkbox" id="useCoordsToggle"> 啟用螢幕座標點擊
+              </label>
+            </div>
+            <div class="coords-inputs-full" id="coordsInputBox">
+              <div class="coord-row-full">
+                <span class="coord-label">X:</span>
+                <input type="number" id="coordX" class="mini-input wide-input" placeholder="0">
+                <span class="coord-label">Y:</span>
+                <input type="number" id="coordY" class="mini-input wide-input" placeholder="0">
+                <button type="button" class="btn-chip" id="btnCaptureCoords" title="點擊後，移至目標網頁點一下以擷取座標">📍 擷取</button>
+              </div>
+              <p class="fallback-hint warn-hint">⚠️ 此備案不依賴任何 DOM 元素，直接對頁面絕對座標 (X, Y) 派發原生點擊。座標在擷取時已自動加入卷軸偏移量，頁面滾動後仍可正確命中目標。<br>適用：頁面被保護、元素在 canvas 中、或其他所有方式均失敗時</p>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- 進階備案選項 -->
-      <details class="advanced-details">
-        <summary>🛡️ 進階備案設定 (Shadow DOM / iframe / CDP)</summary>
-        <div class="advanced-body">
-          <div class="option-row">
-            <label class="checkbox-label" title="自動穿透 Web Component / Shadow DOM 中的元素">
-              <input type="checkbox" id="useShadowDomToggle"> 啟用 Shadow DOM 穿透搜尋
-            </label>
+        <!-- 進階備案選項 -->
+        <details class="advanced-details">
+          <summary>🛡️ 進階備案設定 (Shadow DOM / iframe / CDP)</summary>
+          <div class="advanced-body">
+            <div class="option-row">
+              <label class="checkbox-label" title="自動穿透 Web Component / Shadow DOM 中的元素">
+                <input type="checkbox" id="useShadowDomToggle"> 啟用 Shadow DOM 穿透搜尋
+              </label>
+            </div>
+            <div class="option-row">
+              <label class="checkbox-label" title="嘗試在同源 iframe 框架內部查詢元素">
+                <input type="checkbox" id="useIframeSearchToggle"> 啟用 iframe 內部元素搜尋
+              </label>
+            </div>
+            <div class="option-row">
+              <label class="checkbox-label" title="當所有 DOM 方式失敗時，自動切換為 CDP 座標點擊">
+                <input type="checkbox" id="useCoordFallbackToggle" checked> 所有方式失敗時自動切換至 CDP 座標點擊
+              </label>
+            </div>
           </div>
-          <div class="option-row">
-            <label class="checkbox-label" title="嘗試在同源 iframe 框架內部查詢元素">
-              <input type="checkbox" id="useIframeSearchToggle"> 啟用 iframe 內部元素搜尋
-            </label>
+        </details>
+
+        <!-- 連點與 CDP 進階選項 -->
+        <details class="advanced-details">
+          <summary>⚙️ 連點與 CDP 選項</summary>
+          <div class="advanced-body">
+            <div class="option-row">
+              <label for="repeatCount">連點次數：</label>
+              <input type="number" id="repeatCount" min="1" max="20" value="1" class="mini-input">
+              <span class="hint">次</span>
+            </div>
+            <div class="option-row">
+              <label for="repeatInterval">連點間隔：</label>
+              <input type="number" id="repeatInterval" min="10" max="1000" value="50" class="mini-input">
+              <span class="hint">毫秒 (ms)</span>
+            </div>
+            <div class="option-row">
+              <label class="checkbox-label" title="使用 Chrome 除錯器協議派發 100% 真實 isTrusted 滑鼠事件">
+                <input type="checkbox" id="useCdpToggle"> 啟用 CDP 原生可信點擊 (isTrusted)
+              </label>
+            </div>
           </div>
-          <div class="option-row">
-            <label class="checkbox-label" title="當所有 DOM 方式失敗時，自動切換為 CDP 座標點擊">
-              <input type="checkbox" id="useCoordFallbackToggle" checked> 所有方式失敗時自動切換至 CDP 座標點擊
-            </label>
+        </details>
+      </section>
+
+      <!-- 底部控制按鈕 -->
+      <footer class="footer-actions">
+        <button type="button" class="btn-primary" id="btnStartCountdown">
+          🚀 啟動定時倒數
+        </button>
+        <button type="button" class="btn-danger" id="btnStopCountdown">
+          ⏹ 終止
+        </button>
+      </footer>
+
+    </div><!-- end mainpanel-main -->
+
+    <!-- ══════════════════ 多目標點擊面板 ══════════════════ -->
+    <div class="main-panel" id="mainpanel-multi">
+      <section class="section-card">
+        <div class="section-title">
+          <span>🔗 多目標點擊序列</span>
+          <button type="button" class="btn-chip" id="btnAddTarget" title="新增目標（最多 10 個）">＋ 新增目標</button>
+        </div>
+        <p class="fallback-hint" style="margin-bottom:6px;">
+          設定多個目標依序點擊，T+0ms 代表觸發時間點，T+200ms 即觸發後 200 毫秒執行。
+          拖曳 ⠿ 可調整執行順序。
+        </p>
+        <div id="multiTargetList" class="multi-target-list">
+          <!-- 動態生成 -->
+        </div>
+        <p class="fallback-hint warn-hint" id="multiTargetEmpty" style="text-align:center;display:block;">
+          尚無目標，點擊「＋ 新增目標」開始設定
+        </p>
+      </section>
+
+      <section class="section-card">
+        <div class="section-title"><span>⏱️ 觸發時間（共用主面板設定）</span></div>
+        <p class="fallback-hint">
+          多目標序列使用主面板「⏱️ 目標觸發時間」設定的時間點做為 T+0ms 基準，請先至主面板設定目標時間。
+        </p>
+      </section>
+
+      <footer class="footer-actions">
+        <button type="button" class="btn-primary" id="btnStartMultiCountdown">
+          🚀 啟動多目標倒數
+        </button>
+        <button type="button" class="btn-danger" id="btnStopMultiCountdown">
+          ⏹ 終止
+        </button>
+      </footer>
+    </div><!-- end mainpanel-multi -->
+
+    <!-- ══════════════════ AI 設定面板 ══════════════════ -->
+    <div class="main-panel" id="mainpanel-ai">
+      <section class="section-card">
+        <div class="section-title"><span>🤖 AI 驗證碼識別設定</span></div>
+        <p class="fallback-hint" style="margin-bottom:10px;">
+          選擇 AI 模型並填入 API Key。點擊「🔍 偵測並解碼」將對當前頁面驗證碼進行截圖並傳送給 AI 解析。
+          API Key 加密存儲於本地，不會上傳。
+        </p>
+
+        <div class="option-row" style="margin-bottom:8px;">
+          <label for="aiModelSelect">AI 模型：</label>
+          <select id="aiModelSelect" class="styled-select" style="flex:1;">
+            <option value="gemini-2.0-flash">Google Gemini 2.0 Flash</option>
+            <option value="gemini-1.5-flash">Google Gemini 1.5 Flash</option>
+            <option value="gpt-4o">OpenAI GPT-4o Vision</option>
+            <option value="claude-3-5-sonnet-20241022">Anthropic Claude 3.5 Sonnet</option>
+          </select>
+        </div>
+
+        <div class="option-row" style="margin-bottom:8px; flex-direction:column; align-items:flex-start; gap:4px;">
+          <label for="aiApiKey" style="font-size:11px; color:#94a3b8;">API Key：</label>
+          <div style="display:flex; gap:6px; width:100%;">
+            <input type="password" id="aiApiKey" class="styled-input code-input"
+              placeholder="貼上您的 API Key" style="flex:1; text-align:left;">
+            <button type="button" class="btn-chip" id="btnToggleApiKey" title="顯示/隱藏 Key">👁</button>
           </div>
         </div>
-      </details>
 
-      <!-- 連點與 CDP 進階選項 -->
-      <details class="advanced-details">
-        <summary>⚙️ 連點與 CDP 選項</summary>
-        <div class="advanced-body">
-          <div class="option-row">
-            <label for="repeatCount">連點次數：</label>
-            <input type="number" id="repeatCount" min="1" max="20" value="1" class="mini-input">
-            <span class="hint">次</span>
-          </div>
-          <div class="option-row">
-            <label for="repeatInterval">連點間隔：</label>
-            <input type="number" id="repeatInterval" min="10" max="1000" value="50" class="mini-input">
-            <span class="hint">毫秒 (ms)</span>
-          </div>
-          <div class="option-row">
-            <label class="checkbox-label" title="使用 Chrome 除錯器協議派發 100% 真實 isTrusted 滑鼠事件">
-              <input type="checkbox" id="useCdpToggle"> 啟用 CDP 原生可信點擊 (isTrusted)
-            </label>
-          </div>
+        <div class="option-row" style="margin-bottom:8px; flex-direction:column; align-items:flex-start; gap:4px;">
+          <label for="aiPrompt" style="font-size:11px; color:#94a3b8;">自訂提示詞（可留空用預設）：</label>
+          <textarea id="aiPrompt" class="styled-input code-input"
+            placeholder="這是一個驗證碼圖片，請只回答驗證碼中的文字或數字，不要包含任何解釋。"
+            style="height:52px; resize:vertical; text-align:left; padding:6px; line-height:1.4;"></textarea>
         </div>
-      </details>
-    </section>
 
-    <!-- 底部控制按鈕 -->
-    <footer class="footer-actions">
-      <button type="button" class="btn-primary" id="btnStartCountdown">
-        🚀 啟動定時倒數
-      </button>
-      <button type="button" class="btn-danger" id="btnStopCountdown">
-        ⏹ 終止
-      </button>
-    </footer>
+        <div style="display:flex; gap:8px; margin-top:6px;">
+          <button type="button" class="btn-picker" id="btnSaveAiSettings" style="flex:1;">
+            💾 儲存設定
+          </button>
+          <button type="button" class="btn-secondary" id="btnDetectSolveCaptcha" style="flex:1.4;">
+            🔍 偵測並解碼驗證碼
+          </button>
+        </div>
+
+        <div id="captchaResultBox" class="captcha-result-box" style="display:none;">
+          <div class="detail-row">
+            <span class="detail-label">偵測結果：</span>
+            <span id="captchaTypeText" class="detail-value">—</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">AI 解答：</span>
+            <span id="captchaAnswerText" class="detail-value" style="color:#10b981;">—</span>
+          </div>
+          <button type="button" class="btn-chip" id="btnFillCaptchaAnswer" style="margin-top:4px;">
+            ✅ 填入驗證碼
+          </button>
+        </div>
+      </section>
+    </div><!-- end mainpanel-ai -->
 
     <!-- 倒數即時狀態 -->
     <div class="status-banner" id="statusBanner">
