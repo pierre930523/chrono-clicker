@@ -1083,6 +1083,30 @@
       sendResponse({ detected: !!detected, type: detected ? detected.type : null });
       return false;
     }
+
+    if (action === 'EXECUTE_TP_AUTO_FLOW') {
+      TicketPlusEngine.runAutoFlow(payload).then(res => {
+        sendResponse(res);
+      }).catch(err => {
+        sendResponse({ success: false, error: err.message });
+      });
+      return true;
+    }
+
+    if (action === 'GET_TP_STATUS') {
+      sendResponse({
+        isTicketPlus: isTicketPlus || !!document.querySelector('.btn-ticketplus, #tpOrderSection'),
+        settings: TicketPlusEngine.settings,
+        detected: TicketPlusEngine.detectElements()
+      });
+      return false;
+    }
+
+    if (action === 'UPDATE_TP_SETTINGS') {
+      TicketPlusEngine.updateSettings(payload);
+      sendResponse({ success: true });
+      return false;
+    }
   });
 
   // ----------------------------------------------------
@@ -1285,5 +1309,302 @@
     }
     return false;
   }
+
+  // ----------------------------------------------------
+  // 9. 遠大售票系統 (Ticket Plus) 專屬全自動選張數與確認引擎
+  // ----------------------------------------------------
+  const TicketPlusEngine = {
+    settings: {
+      enabled: true,
+      targetCount: 1, // 1~4
+      autoAgree: true,
+      autoConfirm: true,
+      autoTriggerCountdown: true
+    },
+    observer: null,
+    isExecuting: false,
+    lastExecTime: 0,
+
+    async init() {
+      try {
+        const stored = await new Promise(res => {
+          chrome.storage.local.get(['tp_settings'], res);
+        });
+        if (stored && stored.tp_settings) {
+          Object.assign(this.settings, stored.tp_settings);
+        }
+      } catch (e) {}
+
+      const isTpContext = isTicketPlus || !!document.querySelector('.btn-ticketplus, #tpOrderSection');
+      if (isTpContext) {
+        console.log('[ChronoClicker TP] 🎫 遠大售票自動選張數與確認模組啟動，設定:', this.settings);
+        this.startObserver();
+      }
+    },
+
+    updateSettings(newSettings) {
+      if (!newSettings) return;
+      Object.assign(this.settings, newSettings);
+      try {
+        chrome.storage.local.set({ tp_settings: this.settings });
+      } catch (e) {}
+      console.log('[ChronoClicker TP] 🎫 設定已更新:', this.settings);
+    },
+
+    startObserver() {
+      if (this.observer) return;
+      this.observer = new MutationObserver(() => {
+        if (!this.settings.enabled) return;
+        const now = Date.now();
+        if (now - this.lastExecTime < 500) return; // 500ms 防抖
+
+        // 偵測是否出現了張數選擇或確認步驟
+        const elements = this.detectElements();
+        if (elements.plusButtons.length > 0 || elements.confirmBtn) {
+          this.runAutoFlow({ silentIfAlreadyDone: true });
+        }
+      });
+
+      this.observer.observe(document.body, {
+        childList: true,
+        subtree: true
+      });
+    },
+
+    detectElements() {
+      // 1. 加號按鈕 (Stepper Plus)
+      const allButtons = Array.from(document.querySelectorAll('button, .v-btn, [role="button"]'));
+      const plusButtons = allButtons.filter(btn => {
+        if (btn.disabled && !btn.classList.contains('v-btn--disabled')) return false;
+        const text = (btn.innerText || btn.textContent || '').trim();
+        const hasPlusIcon = !!btn.querySelector('.mdi-plus, i[class*="plus"], [class*="icon-plus"], svg[data-icon="plus"]');
+        const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+        return hasPlusIcon || text === '+' || text === '＋' || ariaLabel.includes('plus') || ariaLabel.includes('增加') || ariaLabel.includes('加');
+      });
+
+      // 2. 減號按鈕 (Stepper Minus)
+      const minusButtons = allButtons.filter(btn => {
+        const text = (btn.innerText || btn.textContent || '').trim();
+        const hasMinusIcon = !!btn.querySelector('.mdi-minus, i[class*="minus"], [class*="icon-minus"]');
+        const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+        return hasMinusIcon || text === '-' || text === '－' || ariaLabel.includes('minus') || ariaLabel.includes('減少');
+      });
+
+      // 3. 張數輸入框或下拉選單
+      const countInputs = Array.from(document.querySelectorAll('input[type="number"], input[aria-label*="張數"], input[placeholder*="張數"], input[name*="count"], input[name*="quantity"]'));
+      const selects = Array.from(document.querySelectorAll('select'));
+
+      // 4. 同意條款 Checkbox
+      const agreementCheckboxes = Array.from(document.querySelectorAll('input[type="checkbox"]')).filter(cb => {
+        const parentText = (cb.closest('label, div, .v-checkbox, .v-selection-control')?.textContent || '').toLowerCase();
+        return parentText.includes('同意') || parentText.includes('服務條款') || parentText.includes('會員條款') || parentText.includes('閱讀') || parentText.includes('agree');
+      });
+
+      // 5. 確認按鈕
+      const confirmKeywords = ['下一步', '確認張數', '確定', '同意並送出', '確定購票', '前往結帳', '立即結帳', '確認', '送出'];
+      let confirmBtn = null;
+      for (const kw of confirmKeywords) {
+        const found = allButtons.find(btn => {
+          // 排除加減號自身
+          if (plusButtons.includes(btn) || minusButtons.includes(btn)) return false;
+          const text = extractButtonText(btn).replace(/\s+/g, '');
+          return text.includes(kw);
+        });
+        if (found) {
+          confirmBtn = found;
+          break;
+        }
+      }
+
+      return {
+        plusButtons,
+        minusButtons,
+        countInputs,
+        selects,
+        agreementCheckboxes,
+        confirmBtn
+      };
+    },
+
+    getCurrentQuantity(plusBtn) {
+      if (!plusBtn) return 0;
+      const parent = plusBtn.parentElement || plusBtn.closest('.v-input, .stepper, .quantity-control, tr, .ticket-row');
+      if (parent) {
+        const input = parent.querySelector('input');
+        if (input && input.value !== undefined) {
+          const v = parseInt(input.value, 10);
+          if (!isNaN(v)) return v;
+        }
+        const textElements = parent.querySelectorAll('span, div');
+        for (const el of textElements) {
+          const t = el.textContent.trim();
+          if (/^\d+$/.test(t)) {
+            const v = parseInt(t, 10);
+            if (!isNaN(v)) return v;
+          }
+        }
+      }
+      return 0;
+    },
+
+    async selectQuantity(targetCount) {
+      targetCount = parseInt(targetCount, 10) || this.settings.targetCount || 1;
+      let success = false;
+      const detected = this.detectElements();
+
+      // 優先方式 A: Stepper Plus 按鈕
+      if (detected.plusButtons.length > 0) {
+        const plusBtn = detected.plusButtons[0];
+        forceUnlockElement(plusBtn);
+        const current = this.getCurrentQuantity(plusBtn);
+        const needed = Math.max(0, targetCount - current);
+
+        console.log(`[ChronoClicker TP] 找到 Stepper + 按鈕，當前張數: ${current}, 目標: ${targetCount}, 點擊 ${needed} 次`);
+        for (let i = 0; i < needed; i++) {
+          this.triggerClick(plusBtn);
+          await new Promise(r => setTimeout(r, 60));
+        }
+        success = true;
+      }
+
+      // 方式 B: 原生 Select 下拉選單
+      if (!success && detected.selects.length > 0) {
+        for (const sel of detected.selects) {
+          const opt = Array.from(sel.options).find(o => o.value == targetCount || o.text.trim() == String(targetCount));
+          if (opt) {
+            sel.value = opt.value;
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            sel.dispatchEvent(new Event('input', { bubbles: true }));
+            console.log(`[ChronoClicker TP] 原生 Select 已選擇: ${targetCount}`);
+            success = true;
+            break;
+          }
+        }
+      }
+
+      // 方式 C: 數字輸入框
+      if (!success && detected.countInputs.length > 0) {
+        const inp = detected.countInputs[0];
+        forceUnlockElement(inp);
+        inp.value = targetCount;
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+        inp.dispatchEvent(new Event('change', { bubbles: true }));
+        console.log(`[ChronoClicker TP] 數字輸入框已填入: ${targetCount}`);
+        success = true;
+      }
+
+      return success;
+    },
+
+    autoAgree() {
+      let agreed = false;
+      const detected = this.detectElements();
+      for (const cb of detected.agreementCheckboxes) {
+        if (!cb.checked) {
+          cb.checked = true;
+          cb.dispatchEvent(new Event('change', { bubbles: true }));
+          cb.dispatchEvent(new Event('input', { bubbles: true }));
+          agreed = true;
+        }
+      }
+
+      // 檢測未勾選的任何 checkbox 且鄰近有同意文字
+      const allCheckboxes = Array.from(document.querySelectorAll('input[type="checkbox"]:not(:checked)'));
+      for (const cb of allCheckboxes) {
+        const parent = cb.closest('label, div');
+        const text = (parent ? parent.textContent : '').toLowerCase();
+        if (text.includes('同意') || text.includes('服務條款') || text.includes('我已詳細閱讀') || text.includes('agree')) {
+          cb.checked = true;
+          cb.dispatchEvent(new Event('change', { bubbles: true }));
+          cb.dispatchEvent(new Event('input', { bubbles: true }));
+          agreed = true;
+        }
+      }
+      return agreed;
+    },
+
+    async clickConfirm() {
+      const detected = this.detectElements();
+      if (detected.confirmBtn) {
+        const btn = detected.confirmBtn;
+        forceUnlockElement(btn);
+        console.log(`[ChronoClicker TP] 找到確認按鈕: "${extractButtonText(btn)}" 觸發點擊`);
+        this.triggerClick(btn);
+        return true;
+      }
+      return false;
+    },
+
+    triggerClick(el) {
+      if (!el) return;
+      forceUnlockElement(el);
+      const coords = getElementCoordinates(el);
+
+      el.classList.add('chrono-click-flash');
+      setTimeout(() => el.classList.remove('chrono-click-flash'), 600);
+
+      // 優先使用 CDP 原生事件（具有 isTrusted = true）
+      chrome.runtime.sendMessage({
+        action: 'DISPATCH_CDP_CLICK',
+        payload: { x: coords.viewportX, y: coords.viewportY, repeat: 1 }
+      });
+
+      // 同步 DOM 事件派發作為保險備案
+      setTimeout(() => {
+        try {
+          el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+          if (typeof el.click === 'function') el.click();
+        } catch (e) {}
+      }, 40);
+    },
+
+    async runAutoFlow(options = {}) {
+      if (this.isExecuting) return { success: false, reason: 'already_running' };
+      this.isExecuting = true;
+      this.lastExecTime = Date.now();
+
+      const targetCount = options.targetCount !== undefined ? options.targetCount : this.settings.targetCount;
+      const doAgree = options.autoAgree !== undefined ? options.autoAgree : this.settings.autoAgree;
+      const doConfirm = options.autoConfirm !== undefined ? options.autoConfirm : this.settings.autoConfirm;
+
+      try {
+        console.log(`[ChronoClicker TP] ⚡ 執行自動選票：目標張數 ${targetCount}，同意條款: ${doAgree}，自動確定: ${doConfirm}`);
+
+        // 1. 選取張數
+        const qtySelected = await this.selectQuantity(targetCount);
+        await new Promise(r => setTimeout(r, 80));
+
+        // 2. 勾選條款
+        if (doAgree) {
+          this.autoAgree();
+          await new Promise(r => setTimeout(r, 80));
+        }
+
+        // 3. 點擊確定
+        let confirmed = false;
+        if (doConfirm) {
+          confirmed = await this.clickConfirm();
+        }
+
+        if (qtySelected || confirmed) {
+          showToast(`🎫 Ticket Plus 遠大售票全自動：\n✅ 已選 ${targetCount} 張票 ${doAgree ? '✓ 同意條款' : ''} ${confirmed ? '✓ 點擊確定' : ''}`);
+        }
+
+        return {
+          success: true,
+          quantitySelected: qtySelected,
+          confirmed: confirmed,
+          targetCount
+        };
+      } finally {
+        setTimeout(() => {
+          this.isExecuting = false;
+        }, 500);
+      }
+    }
+  };
+
+  // 初始化 Ticket Plus 模組
+  TicketPlusEngine.init();
 
 })();

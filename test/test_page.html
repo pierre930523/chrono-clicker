@@ -251,6 +251,40 @@
     <div style="margin-top:10px; font-size:11px; color:#94a3b8;" id="tpSimStatus">
       狀態：🔒 場次一尚未開賣 (disabled / pointer-events: none) | 場次二為即刻開賣 (驗證選取器作用域不混淆)
     </div>
+
+    <!-- 遠大售票購票張數與確認流程仿真 -->
+    <div id="tpOrderSection" style="margin-top:16px; padding:14px; background:#0b1120; border-radius:8px; border:1px solid rgba(244,63,94,0.3);">
+      <div style="font-size:13px; font-weight:bold; color:#f43f5e; margin-bottom:10px;">
+        🎫 遠大售票 (Ticket Plus) 結帳選票流程模擬 (張數加減 / 條款勾選 / 確認按鈕)
+      </div>
+      
+      <!-- Stepper 加減張數 -->
+      <div style="display:flex; align-items:center; gap:16px; margin-bottom:12px;" class="quantity-control">
+        <span style="font-size:13px; color:#f1f5f9;">購票張數：</span>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <button type="button" class="v-btn" id="tpBtnMinus" aria-label="減少張數" onclick="changeTpOrderQty(-1)" style="width:32px; height:32px; padding:0; background:#334155; color:#fff; border-radius:4px;">-</button>
+          <input type="number" id="tpQtyInputVal" class="styled-input" value="0" min="0" max="4" style="width:48px; text-align:center; background:#1e293b; color:#38bdf8; border:1px solid #475569; border-radius:4px; font-weight:bold; font-size:14px;" onchange="syncTpOrderQty(this.value)">
+          <button type="button" class="v-btn" id="tpBtnPlus" aria-label="增加張數" onclick="changeTpOrderQty(1)" style="width:32px; height:32px; padding:0; background:#f43f5e; color:#fff; border-radius:4px;">+</button>
+        </div>
+        <span id="tpQtyFeedback" style="font-size:12px; color:#94a3b8;">(當前張數: 0 張)</span>
+      </div>
+
+      <!-- 同意會員條款 Checkbox -->
+      <div style="margin-bottom:12px;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12.5px; color:#cbd5e1;">
+          <input type="checkbox" id="tpAgreementCheck" onchange="handleTpAgreementChange(this)">
+          <span>我已詳細閱讀並同意 <a href="#terms" style="color:#38bdf8;">會員服務條款</a> 與購票相關規範</span>
+        </label>
+      </div>
+
+      <!-- 下一步 / 確認張數 按鈕 -->
+      <div style="display:flex; gap:12px; align-items:center;">
+        <button type="button" id="tpConfirmBtn" class="v-btn" onclick="handleTpOrderConfirm(event)" style="background:linear-gradient(135deg, #f43f5e, #ec4899); color:#fff; font-size:14px; padding:10px 24px; border-radius:6px; box-shadow:0 4px 14px rgba(244,63,94,0.4);">
+          下一步：確認張數
+        </button>
+        <span id="tpOrderResult" style="font-size:12px; color:#94a3b8;">尚未送出確認</span>
+      </div>
+    </div>
   </div>
 
   <!-- 2. 多目標組合點擊測試 -->
@@ -419,6 +453,47 @@
       `;
       document.getElementById('tpSimStatus').textContent = '狀態：🔒 場次一尚未開賣 (disabled / pointer-events: none) | 場次二為即刻開賣';
       log('[遠大售票] 模擬狀態已重設為未開賣');
+    }
+
+    // 遠大售票購票張數與流程互動邏輯
+    let currentTpQty = 0;
+
+    function changeTpOrderQty(delta) {
+      const input = document.getElementById('tpQtyInputVal');
+      let val = parseInt(input.value, 10) || 0;
+      val = Math.max(0, Math.min(4, val + delta));
+      input.value = val;
+      syncTpOrderQty(val);
+    }
+
+    function syncTpOrderQty(val) {
+      currentTpQty = parseInt(val, 10) || 0;
+      document.getElementById('tpQtyFeedback').textContent = `(當前張數: ${currentTpQty} 張)`;
+      log(`🎫 [遠大售票] 購票張數變更為：${currentTpQty} 張`, 'step');
+    }
+
+    function handleTpAgreementChange(checkbox) {
+      log(`🎫 [遠大售票] 會員服務條款勾選狀態：${checkbox.checked ? '已同意 ✓' : '未同意 ✗'}`, 'step');
+    }
+
+    function handleTpOrderConfirm(event) {
+      const isChecked = document.getElementById('tpAgreementCheck').checked;
+      const resEl = document.getElementById('tpOrderResult');
+      handleClick(event, '遠大售票 [下一步：確認張數]');
+
+      if (currentTpQty <= 0) {
+        resEl.innerHTML = '<span style="color:#f59e0b;font-weight:bold;">⚠️ 請先選擇至少 1 張票！</span>';
+        log('⚠️ [遠大售票] 送出失敗：張數為 0', 'warn');
+        return;
+      }
+      if (!isChecked) {
+        resEl.innerHTML = '<span style="color:#f59e0b;font-weight:bold;">⚠️ 請勾選同意會員服務條款！</span>';
+        log('⚠️ [遠大售票] 送出失敗：尚未勾選同意條款', 'warn');
+        return;
+      }
+
+      resEl.innerHTML = `<span style="color:#10b981;font-weight:bold;">🎉 購票確認成功！張數: ${currentTpQty} 張，進入結帳</span>`;
+      log(`🎉 [遠大售票] 訂單確認成功！張數: ${currentTpQty} 張，條款: 已同意`, 'success');
     }
 
     function handleStepClick(event, stepNum) {

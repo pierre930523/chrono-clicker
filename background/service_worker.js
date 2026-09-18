@@ -281,6 +281,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch(err => sendResponse({ success: false, error: err.message }));
     return true;
   }
+
+  // 9. 功能 B：AI 模型自動掃描 API Key 列出可用模型
+  if (action === 'SCAN_AI_MODELS') {
+    const { provider, apiKey } = payload;
+    scanAIModels(provider, apiKey)
+      .then(result => sendResponse({ success: true, ...result }))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
 });
 
 async function focusTabAndWindow(tabId) {
@@ -419,10 +428,11 @@ async function dispatchSystemMouseClick(screenX, screenY, physicalX, physicalY, 
 // ─── AI 驗證碼解析（功能 B）──────────────────────────────────────
 async function solveCaptchaWithAI(model, apiKey, imageBase64, prompt) {
   const defaultPrompt = prompt || '這是一個驗證碼圖片，請只回答驗證碼中的文字或數字，不要包含任何解釋。';
+  const normModel = (model || '').toLowerCase();
 
   // ── Google Gemini ─────────────────────────────────────────────
-  if (model.startsWith('gemini')) {
-    const modelId = model;
+  if (normModel.includes('gemini')) {
+    const modelId = model.replace(/^models\//, '');
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
     const body = {
       contents: [{
@@ -452,11 +462,11 @@ async function solveCaptchaWithAI(model, apiKey, imageBase64, prompt) {
     return text.trim();
   }
 
-  // ── OpenAI GPT-4o ────────────────────────────────────────────
-  if (model === 'gpt-4o') {
+  // ── OpenAI GPT / o1 / o3 ─────────────────────────────────────
+  if (normModel.startsWith('gpt') || normModel.startsWith('o1') || normModel.startsWith('o3') || normModel.startsWith('chatgpt')) {
     const url = 'https://api.openai.com/v1/chat/completions';
     const body = {
-      model: 'gpt-4o',
+      model: model,
       messages: [{
         role: 'user',
         content: [
@@ -488,7 +498,7 @@ async function solveCaptchaWithAI(model, apiKey, imageBase64, prompt) {
   }
 
   // ── Anthropic Claude ─────────────────────────────────────────
-  if (model.startsWith('claude')) {
+  if (normModel.includes('claude')) {
     const url = 'https://api.anthropic.com/v1/messages';
     const body = {
       model: model,
@@ -527,4 +537,156 @@ async function solveCaptchaWithAI(model, apiKey, imageBase64, prompt) {
   }
 
   throw new Error(`不支援的 AI 模型：${model}`);
+}
+
+// ─── AI 模型自動掃描（支援 Gemini / OpenAI / Claude）──────────────
+async function scanAIModels(provider, apiKey) {
+  if (!apiKey || !apiKey.trim()) {
+    throw new Error('請先填入 API Key！');
+  }
+  const key = apiKey.trim();
+
+  // 自動判斷 Provider
+  let actualProvider = provider || 'auto';
+  if (actualProvider === 'auto') {
+    if (key.startsWith('AIza')) {
+      actualProvider = 'gemini';
+    } else if (key.startsWith('sk-ant-')) {
+      actualProvider = 'claude';
+    } else if (key.startsWith('sk-')) {
+      actualProvider = 'openai';
+    } else {
+      actualProvider = 'gemini';
+    }
+  }
+
+  // 1. Google Gemini 掃描
+  if (actualProvider === 'gemini') {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      const errText = await res.text();
+      let errMsg = `HTTP ${res.status}`;
+      try {
+        const parsed = JSON.parse(errText);
+        if (parsed.error && parsed.error.message) errMsg = parsed.error.message;
+      } catch (e) {}
+      throw new Error(`Gemini API 驗證失敗: ${errMsg}`);
+    }
+    const data = await res.json();
+    const rawList = data.models || [];
+
+    // 篩選支援 generateContent 的多模態模型
+    const filtered = rawList.filter(m => {
+      const methods = m.supportedGenerationMethods || [];
+      return methods.includes('generateContent');
+    }).map(m => {
+      const id = m.name.replace(/^models\//, '');
+      return {
+        id: id,
+        displayName: m.displayName ? `${m.displayName} (${id})` : id,
+        description: m.description || '',
+        provider: 'gemini'
+      };
+    });
+
+    // 依版本與熱門度推薦排序
+    const priority = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+    filtered.sort((a, b) => {
+      const idxA = priority.findIndex(p => a.id.startsWith(p));
+      const idxB = priority.findIndex(p => b.id.startsWith(p));
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.id.localeCompare(b.id);
+    });
+
+    return { provider: 'gemini', models: filtered };
+  }
+
+  // 2. OpenAI 掃描
+  if (actualProvider === 'openai') {
+    const url = 'https://api.openai.com/v1/models';
+    const res = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${key}` }
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      let errMsg = `HTTP ${res.status}`;
+      try {
+        const parsed = JSON.parse(errText);
+        if (parsed.error && parsed.error.message) errMsg = parsed.error.message;
+      } catch (e) {}
+      throw new Error(`OpenAI API 驗證失敗: ${errMsg}`);
+    }
+    const data = await res.json();
+    const rawList = data.data || [];
+
+    // 篩選 GPT / o1 / o3 視覺對話相容模型
+    const filtered = rawList.filter(m => {
+      const id = m.id.toLowerCase();
+      return (id.startsWith('gpt-') || id.startsWith('o1') || id.startsWith('o3') || id.startsWith('chatgpt'))
+             && !id.includes('realtime') && !id.includes('audio') && !id.includes('embedding') && !id.includes('dall-e');
+    }).map(m => ({
+      id: m.id,
+      displayName: `OpenAI ${m.id}`,
+      description: `Owner: ${m.owned_by || 'openai'}`,
+      provider: 'openai'
+    }));
+
+    const priority = ['gpt-4o', 'gpt-4o-mini', 'o1-mini', 'o1', 'gpt-4-turbo', 'gpt-4'];
+    filtered.sort((a, b) => {
+      const idxA = priority.findIndex(p => a.id === p || a.id.startsWith(p));
+      const idxB = priority.findIndex(p => b.id === p || b.id.startsWith(p));
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.id.localeCompare(b.id);
+    });
+
+    return { provider: 'openai', models: filtered };
+  }
+
+  // 3. Anthropic Claude 掃描
+  if (actualProvider === 'claude') {
+    let models = [];
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/models', {
+        headers: {
+          'x-api-key': key,
+          'anthropic-version': '2023-06-01'
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.data) && data.data.length > 0) {
+          models = data.data.map(m => ({
+            id: m.id,
+            displayName: m.display_name ? `${m.display_name} (${m.id})` : m.id,
+            description: 'Anthropic Claude',
+            provider: 'claude'
+          }));
+        }
+      } else if (res.status === 401) {
+        throw new Error('Anthropic API Key 驗證無效 (401 Unauthorized)');
+      }
+    } catch (e) {
+      if (e.message.includes('401') || e.message.includes('無效')) throw e;
+    }
+
+    if (models.length === 0) {
+      // 官方熱門推薦多模態模型清單
+      models = [
+        { id: 'claude-3-5-sonnet-20241022', displayName: 'Claude 3.5 Sonnet (最新推薦)', description: '高智慧高速度多模態', provider: 'claude' },
+        { id: 'claude-3-5-haiku-20241022', displayName: 'Claude 3.5 Haiku', description: '極速輕量多模態', provider: 'claude' },
+        { id: 'claude-3-opus-20240229', displayName: 'Claude 3 Opus', description: '高複雜度深度推理', provider: 'claude' },
+        { id: 'claude-3-sonnet-20240229', displayName: 'Claude 3 Sonnet', description: '平衡型視覺模型', provider: 'claude' },
+        { id: 'claude-3-haiku-20240307', displayName: 'Claude 3 Haiku', description: '輕量快速', provider: 'claude' }
+      ];
+    }
+
+    return { provider: 'claude', models };
+  }
+
+  throw new Error(`不支援的 AI 提供商: ${actualProvider}`);
 }

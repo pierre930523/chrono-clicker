@@ -1,16 +1,27 @@
 /**
- * ChronoClicker - Popup Logic v1.1
- * 功能：
- *   - 世界時區即時渲染、原子鐘校準
- *   - 單目標定時點擊（原有功能 + 座標 Bug 修正說明）
- *   - 多目標序列點擊（功能 A，可拖曳排序，最多 10 個）
- *   - AI 驗證碼自動識別（功能 B，Gemini/GPT-4o/Claude）
+ * ChronoClicker - Modern Popup Controller v1.2
+ * 包含：
+ *   - 3 模式主題系統 (跟隨系統 / 極致深色 / 優雅淺色)
+ *   - AI 模型自動掃描 API Key 與動態模型選單 (Google Gemini / OpenAI / Anthropic Claude)
+ *   - 遠大售票 (ticketplus.com.tw) 深度專屬自動化控制 (選票張數 1-4 / 同意條款 / 自動確認)
+ *   - 世界時鐘即時渲染與原子鐘 NTP 校準
+ *   - 單目標定時點擊 (CSS Selector / XPath / 文字搜尋 / 螢幕座標)
+ *   - 多目標序列排程 (可拖曳排序 / 獨立延遲 / 批量觸發)
+ *   - 系統級 Windows 實體滑鼠伺服器連線與 CDP 原生可信點擊
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
   // ────────────────────────────────────────────────
-  // DOM 元素引用
+  // 1. DOM 元素引用
   // ────────────────────────────────────────────────
+  // 主題切換
+  const themeBtns             = document.querySelectorAll('.theme-btn');
+
+  // 主分頁
+  const mainTabs              = document.querySelectorAll('.main-tab');
+  const mainPanels            = document.querySelectorAll('.main-panel');
+
+  // 時鐘與原子鐘狀態
   const tzSelect              = document.getElementById('tzSelect');
   const liveClockTime         = document.getElementById('liveClockTime');
   const liveClockMs           = document.getElementById('liveClockMs');
@@ -19,6 +30,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const syncStatusText        = document.getElementById('syncStatusText');
   const currentDomainBadge    = document.getElementById('currentDomainBadge');
 
+  // 目標時間
   const targetDateInput       = document.getElementById('targetDate');
   const targetHourInput       = document.getElementById('targetHour');
   const targetMinuteInput     = document.getElementById('targetMinute');
@@ -30,10 +42,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnPlus1m             = document.getElementById('btnPlus1m');
   const btnNextHour           = document.getElementById('btnNextHour');
 
+  // 點擊目標設定
   const btnStartPicker        = document.getElementById('btnStartPicker');
   const btnTestClick          = document.getElementById('btnTestClick');
   const targetPreviewText     = document.getElementById('targetPreviewText');
-
   const targetSelectorInput   = document.getElementById('targetSelectorInput');
   const targetXpathInput      = document.getElementById('targetXpathInput');
   const targetSearchText      = document.getElementById('targetSearchText');
@@ -63,17 +75,35 @@ document.addEventListener('DOMContentLoaded', async () => {
   const statusBanner          = document.getElementById('statusBanner');
   const statusBannerText      = document.getElementById('statusBannerText');
 
-  // 多目標面板
+  // 遠大售票專用控制
+  const tpActiveIndicator     = document.getElementById('tpActiveIndicator');
+  const tpEnabledToggle       = document.getElementById('tpEnabledToggle');
+  const tpQtyChips            = document.querySelectorAll('.qty-chip');
+  const tpQtyInput            = document.getElementById('tpQtyInput');
+  const tpAutoAgreeToggle     = document.getElementById('tpAutoAgreeToggle');
+  const tpAutoConfirmToggle   = document.getElementById('tpAutoConfirmToggle');
+  const btnRunTpAutoFlow      = document.getElementById('btnRunTpAutoFlow');
+  const btnGoToMainTab        = document.getElementById('btnGoToMainTab');
+
+  // 多目標序列面板
   const btnAddTarget          = document.getElementById('btnAddTarget');
   const multiTargetList       = document.getElementById('multiTargetList');
   const multiTargetEmpty      = document.getElementById('multiTargetEmpty');
   const btnStartMultiCountdown= document.getElementById('btnStartMultiCountdown');
   const btnStopMultiCountdown = document.getElementById('btnStopMultiCountdown');
 
-  // AI 設定面板
-  const aiModelSelect         = document.getElementById('aiModelSelect');
+  // AI 模型與掃描控制
+  const providerChips         = document.querySelectorAll('.provider-chip');
+  const aiProviderSelect      = document.getElementById('aiProviderSelect');
   const aiApiKeyInput         = document.getElementById('aiApiKey');
   const btnToggleApiKey       = document.getElementById('btnToggleApiKey');
+  const btnScanModels         = document.getElementById('btnScanModels');
+  const scanSpinner           = document.getElementById('scanSpinner');
+  const scanBtnText           = document.getElementById('scanBtnText');
+  const scanStatusBox         = document.getElementById('scanStatusBox');
+  const scanStatusBadge       = document.getElementById('scanStatusBadge');
+  const modelCountTag         = document.getElementById('modelCountTag');
+  const aiModelSelect         = document.getElementById('aiModelSelect');
   const aiPromptInput         = document.getElementById('aiPrompt');
   const btnSaveAiSettings     = document.getElementById('btnSaveAiSettings');
   const btnDetectSolveCaptcha = document.getElementById('btnDetectSolveCaptcha');
@@ -83,31 +113,96 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnFillCaptchaAnswer  = document.getElementById('btnFillCaptchaAnswer');
 
   // ────────────────────────────────────────────────
-  // 狀態
+  // 2. 內部狀態
   // ────────────────────────────────────────────────
   let currentTab = null;
   let currentDomain = '';
   let selectedTimezone = 'Asia/Taipei';
   let targetElementInfo = null;
-  let multiTargets = []; // [{id, selector, xpath, searchText, coords, delayMs, repeat, interval, useCdp, label}]
+  let multiTargets = [];
   let lastCaptchaAnswer = '';
-  let coordsArePageSpace = false; // 記錄座標是否為頁面絕對座標
+  let coordsArePageSpace = false;
+  let scanDebounceTimer = null;
+
+  let tpSettings = {
+    enabled: true,
+    targetCount: 1,
+    autoAgree: true,
+    autoConfirm: true
+  };
 
   // ────────────────────────────────────────────────
-  // 主分頁切換
+  // 3. 三大模式主題切換 (System / Dark / Light)
   // ────────────────────────────────────────────────
-  document.querySelectorAll('.main-tab').forEach(tab => {
+  async function initTheme() {
+    const res = await chrome.storage.local.get(['chrono_theme']);
+    const savedTheme = res.chrono_theme || 'system';
+    applyTheme(savedTheme, false);
+
+    themeBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const theme = btn.dataset.theme;
+        applyTheme(theme, true);
+      });
+    });
+
+    // 監聽作業系統深色/淺色主題變更
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      chrome.storage.local.get(['chrono_theme'], (r) => {
+        if (!r.chrono_theme || r.chrono_theme === 'system') {
+          applyTheme('system', false);
+        }
+      });
+    });
+  }
+
+  function applyTheme(theme, save = true) {
+    document.body.setAttribute('data-theme', theme);
+    themeBtns.forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.theme === theme);
+    });
+    if (save) {
+      chrome.storage.local.set({ chrono_theme: theme });
+    }
+  }
+
+  await initTheme();
+
+  // ────────────────────────────────────────────────
+  // 4. 主分頁切換
+  // ────────────────────────────────────────────────
+  mainTabs.forEach(tab => {
     tab.addEventListener('click', () => {
-      document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.main-panel').forEach(p => p.classList.remove('active'));
+      mainTabs.forEach(t => t.classList.remove('active'));
+      mainPanels.forEach(p => p.classList.remove('active'));
       tab.classList.add('active');
       const panelId = `mainpanel-${tab.dataset.mainTab}`;
+      const panel = document.getElementById(panelId);
+      if (panel) panel.classList.add('active');
+    });
+  });
+
+  if (btnGoToMainTab) {
+    btnGoToMainTab.addEventListener('click', () => {
+      const mainTabBtn = document.querySelector('.main-tab[data-main-tab="main"]');
+      if (mainTabBtn) mainTabBtn.click();
+    });
+  }
+
+  // 備案解析策略 Tab 切換
+  document.querySelectorAll('.ftab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.ftab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.ftab-panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      const panelId = `fpanel-${tab.dataset.tab}`;
       document.getElementById(panelId)?.classList.add('active');
+      saveCurrentConfig();
     });
   });
 
   // ────────────────────────────────────────────────
-  // 1. 時區下拉選單
+  // 5. 世界時區與即時時鐘
   // ────────────────────────────────────────────────
   TimeSync.TIMEZONES.forEach((tz) => {
     const opt = document.createElement('option');
@@ -121,43 +216,58 @@ document.addEventListener('DOMContentLoaded', async () => {
     saveCurrentConfig();
   });
 
-  // 備案策略 Tab 切換邏輯
-  document.querySelectorAll('.ftab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.ftab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.ftab-panel').forEach(p => p.classList.remove('active'));
-      tab.classList.add('active');
-      const panelId = `fpanel-${tab.dataset.tab}`;
-      document.getElementById(panelId)?.classList.add('active');
-      saveCurrentConfig();
-    });
-  });
+  function renderClock() {
+    const accurateNow = TimeSync.getAccurateNow();
+    const formatted = TimeSync.formatInTimezone(accurateNow, selectedTimezone);
+    if (liveClockTime && liveClockTime.childNodes[0]) {
+      liveClockTime.childNodes[0].nodeValue = formatted.timeString;
+    }
+    if (liveClockMs) liveClockMs.textContent = `.${formatted.msString}`;
+    if (liveClockDate) liveClockDate.textContent = `${formatted.dateString} (${selectedTimezone})`;
+    requestAnimationFrame(renderClock);
+  }
+  requestAnimationFrame(renderClock);
 
-  // 座標擷取
-  if (btnCaptureCoords) {
-    btnCaptureCoords.addEventListener('click', async () => {
-      if (!currentTab || !currentTab.id) return;
-      statusBannerText.textContent = '📍 請切換至目標網頁，點擊想要的位置以擷取座標...';
-      chrome.tabs.sendMessage(currentTab.id, { action: 'ACTIVATE_COORD_CAPTURE' }, () => {
-        if (chrome.runtime.lastError) {
-          statusBannerText.textContent = '⚠️ 請先重新整理目標網頁';
-          return;
-        }
-        window.close();
-      });
-    });
+  // 快速時間設定
+  function addTimeOffset(secondsToAdd, roundToNextHour = false) {
+    const accurateNow = TimeSync.getAccurateNow();
+    let targetTime = accurateNow + secondsToAdd * 1000;
+    if (roundToNextHour) {
+      const d = new Date(accurateNow);
+      d.setHours(d.getHours() + 1, 0, 0, 0);
+      targetTime = d.getTime();
+    }
+    const fmt = TimeSync.formatInTimezone(targetTime, selectedTimezone);
+    const [year, month, day] = fmt.dateString.split('-');
+    const [h, m, s] = fmt.timeString.split(':');
+    if (targetDateInput) targetDateInput.value = `${year}-${month}-${day}`;
+    if (targetHourInput) targetHourInput.value = h;
+    if (targetMinuteInput) targetMinuteInput.value = m;
+    if (targetSecondInput) targetSecondInput.value = s;
+    if (targetMsInput) targetMsInput.value = '000';
+    saveCurrentConfig();
   }
 
+  if (btnPlus10s) btnPlus10s.addEventListener('click', () => addTimeOffset(10));
+  if (btnPlus30s) btnPlus30s.addEventListener('click', () => addTimeOffset(30));
+  if (btnPlus1m) btnPlus1m.addEventListener('click', () => addTimeOffset(60));
+  if (btnNextHour) btnNextHour.addEventListener('click', () => addTimeOffset(0, true));
+
+  if (targetHourInput && !targetHourInput.value) addTimeOffset(60);
+
   // ────────────────────────────────────────────────
-  // 2. 時間同步
+  // 6. 原子鐘時間同步
   // ────────────────────────────────────────────────
   await TimeSync.init();
   updateSyncBadge();
   if (!TimeSync.isSynced) triggerTimeSync();
 
-  syncStatusBadge.addEventListener('click', () => triggerTimeSync());
+  if (syncStatusBadge) {
+    syncStatusBadge.addEventListener('click', () => triggerTimeSync());
+  }
 
   function updateSyncBadge() {
+    if (!syncStatusBadge || !syncStatusText) return;
     if (TimeSync.isSynced) {
       syncStatusBadge.className = 'sync-status synced';
       syncStatusText.textContent = `±${TimeSync.offset}ms (延遲: ${TimeSync.rtt}ms)`;
@@ -168,6 +278,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function triggerTimeSync() {
+    if (!syncStatusBadge || !syncStatusText) return;
     syncStatusText.textContent = '校準原子鐘...';
     syncStatusBadge.className = 'sync-status';
     chrome.runtime.sendMessage({ action: 'SYNC_TIME' }, (res) => {
@@ -180,7 +291,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // 實體滑鼠伺服器狀態檢查與 Modal 綁定
+  // ────────────────────────────────────────────────
+  // 7. 本機實體滑鼠伺服器檢測
+  // ────────────────────────────────────────────────
   async function checkMouseServer() {
     if (!systemMouseStatusBadge) return;
     systemMouseStatusBadge.textContent = '連線檢測中...';
@@ -189,7 +302,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (res && res.available) {
         systemMouseStatusBadge.textContent = '🟢 實體滑鼠已連線';
         systemMouseStatusBadge.className = 'badge-tag online';
-        // 若在 Ticket Plus 售票網站且伺服器在線，自動啟用實體滑鼠
         if (currentDomain && currentDomain.includes('ticketplus.com.tw') && useSystemMouseToggle) {
           useSystemMouseToggle.checked = true;
           saveCurrentConfig();
@@ -217,7 +329,421 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // ────────────────────────────────────────────────
-  // 3. 當前分頁
+  // 8. 遠大售票 (Ticket Plus) 深度整合邏輯
+  // ────────────────────────────────────────────────
+  async function initTicketPlus() {
+    try {
+      const res = await chrome.storage.local.get(['tp_settings']);
+      if (res.tp_settings) {
+        Object.assign(tpSettings, res.tp_settings);
+      }
+    } catch (e) {}
+
+    // 初始化 UI 狀態
+    if (tpEnabledToggle) tpEnabledToggle.checked = tpSettings.enabled !== false;
+    if (tpAutoAgreeToggle) tpAutoAgreeToggle.checked = tpSettings.autoAgree !== false;
+    if (tpAutoConfirmToggle) tpAutoConfirmToggle.checked = tpSettings.autoConfirm !== false;
+    if (tpQtyInput) tpQtyInput.value = tpSettings.targetCount || 1;
+
+    updateQtyChipsUI(tpSettings.targetCount || 1);
+
+    // 購票張數 Chips 切換
+    tpQtyChips.forEach(chip => {
+      chip.addEventListener('click', () => {
+        const qty = parseInt(chip.dataset.qty, 10) || 1;
+        tpSettings.targetCount = qty;
+        if (tpQtyInput) tpQtyInput.value = qty;
+        updateQtyChipsUI(qty);
+        saveTpSettings();
+      });
+    });
+
+    // 勾選開關
+    if (tpEnabledToggle) {
+      tpEnabledToggle.addEventListener('change', () => {
+        tpSettings.enabled = tpEnabledToggle.checked;
+        saveTpSettings();
+      });
+    }
+
+    if (tpAutoAgreeToggle) {
+      tpAutoAgreeToggle.addEventListener('change', () => {
+        tpSettings.autoAgree = tpAutoAgreeToggle.checked;
+        saveTpSettings();
+      });
+    }
+
+    if (tpAutoConfirmToggle) {
+      tpAutoConfirmToggle.addEventListener('change', () => {
+        tpSettings.autoConfirm = tpAutoConfirmToggle.checked;
+        saveTpSettings();
+      });
+    }
+
+    // 立即執行自動流程測試按鈕
+    if (btnRunTpAutoFlow) {
+      btnRunTpAutoFlow.addEventListener('click', async () => {
+        if (!currentTab || !currentTab.id) {
+          alert('請先切換至 Ticket Plus 售票分頁！');
+          return;
+        }
+        btnRunTpAutoFlow.disabled = true;
+        statusBannerText.textContent = `🎫 正在執行自動選 ${tpSettings.targetCount} 張票與確認流程...`;
+
+        chrome.tabs.sendMessage(currentTab.id, {
+          action: 'EXECUTE_TP_AUTO_FLOW',
+          payload: tpSettings
+        }, (res) => {
+          btnRunTpAutoFlow.disabled = false;
+          if (chrome.runtime.lastError) {
+            statusBannerText.textContent = '⚠️ 請先重新整理售票頁面';
+            return;
+          }
+          if (res && res.success) {
+            statusBanner.className = 'status-banner active';
+            statusBannerText.textContent = `✅ 遠大自動流程完成：已選 ${res.targetCount} 張票 ${res.confirmed ? '，已送出確定' : ''}`;
+          } else {
+            statusBannerText.textContent = `⚠️ 自動流程回傳：${res?.reason || '未找到目標元素'}`;
+          }
+        });
+      });
+    }
+  }
+
+  function updateQtyChipsUI(targetQty) {
+    tpQtyChips.forEach(chip => {
+      const q = parseInt(chip.dataset.qty, 10);
+      chip.classList.toggle('active', q === targetQty);
+    });
+  }
+
+  function saveTpSettings() {
+    chrome.storage.local.set({ tp_settings: tpSettings });
+    if (currentTab && currentTab.id) {
+      chrome.tabs.sendMessage(currentTab.id, {
+        action: 'UPDATE_TP_SETTINGS',
+        payload: tpSettings
+      }, () => {
+        if (chrome.runtime.lastError) {} // 忽略未載入錯誤
+      });
+    }
+  }
+
+  await initTicketPlus();
+
+  // ────────────────────────────────────────────────
+  // 9. AI 模型自動掃描與驗證碼設定
+  // ────────────────────────────────────────────────
+  async function initAiScanner() {
+    // 讀取已存設定
+    const res = await chrome.storage.local.get([
+      'ai_provider', 'ai_model', 'ai_api_key', 'ai_prompt', 'scanned_models'
+    ]);
+
+    const savedProvider = res.ai_provider || 'gemini';
+    if (aiProviderSelect) aiProviderSelect.value = savedProvider;
+    updateProviderChipsUI(savedProvider);
+
+    if (res.ai_api_key && aiApiKeyInput) aiApiKeyInput.value = res.ai_api_key;
+    if (res.ai_prompt && aiPromptInput) aiPromptInput.value = res.ai_prompt;
+
+    // 若有快取的掃描模型清單，填入下拉選單
+    if (Array.isArray(res.scanned_models) && res.scanned_models.length > 0) {
+      populateModelDropdown(res.scanned_models, res.ai_model);
+      if (modelCountTag) modelCountTag.textContent = `已掃描 ${res.scanned_models.length} 個模型`;
+      if (scanStatusBox && scanStatusBadge) {
+        scanStatusBox.style.display = 'flex';
+        scanStatusBadge.textContent = `✨ 已快取 ${res.scanned_models.length} 個模型 (${savedProvider.toUpperCase()})`;
+      }
+    } else if (res.ai_model && aiModelSelect) {
+      aiModelSelect.value = res.ai_model;
+    }
+
+    // AI 提供商 Chips 切換
+    providerChips.forEach(chip => {
+      chip.addEventListener('click', () => {
+        const provider = chip.dataset.provider;
+        if (aiProviderSelect) aiProviderSelect.value = provider;
+        updateProviderChipsUI(provider);
+        updateApiKeyPlaceholder(provider);
+      });
+    });
+
+    // API Key 顯示/隱藏切換
+    if (btnToggleApiKey && aiApiKeyInput) {
+      btnToggleApiKey.addEventListener('click', () => {
+        const isHidden = aiApiKeyInput.type === 'password';
+        aiApiKeyInput.type = isHidden ? 'text' : 'password';
+        btnToggleApiKey.textContent = isHidden ? '🙈' : '👁';
+      });
+    }
+
+    // API Key 自動偵測提供商與防抖掃描
+    if (aiApiKeyInput) {
+      aiApiKeyInput.addEventListener('input', (e) => {
+        const val = e.target.value.trim();
+        detectProviderFromKey(val);
+
+        clearTimeout(scanDebounceTimer);
+        if (val.length > 20) {
+          scanDebounceTimer = setTimeout(() => {
+            triggerScanModels({ silentOnEmpty: true });
+          }, 800);
+        }
+      });
+    }
+
+    // 掃描模型按鈕
+    if (btnScanModels) {
+      btnScanModels.addEventListener('click', () => {
+        triggerScanModels({ silentOnEmpty: false });
+      });
+    }
+
+    // 儲存 AI 設定
+    if (btnSaveAiSettings) {
+      btnSaveAiSettings.addEventListener('click', async () => {
+        const provider = aiProviderSelect ? aiProviderSelect.value : 'gemini';
+        const model = aiModelSelect ? aiModelSelect.value : '';
+        const apiKey = aiApiKeyInput ? aiApiKeyInput.value.trim() : '';
+        const prompt = aiPromptInput ? aiPromptInput.value.trim() : '';
+
+        if (!apiKey) {
+          alert('請輸入 API Key！');
+          return;
+        }
+
+        await chrome.storage.local.set({
+          ai_provider: provider,
+          ai_model: model,
+          ai_api_key: apiKey,
+          ai_prompt: prompt
+        });
+
+        statusBannerText.textContent = '✅ AI 設定已成功儲存！';
+      });
+    }
+  }
+
+  function updateProviderChipsUI(activeProvider) {
+    providerChips.forEach(chip => {
+      chip.classList.toggle('active', chip.dataset.provider === activeProvider);
+    });
+  }
+
+  function updateApiKeyPlaceholder(provider) {
+    if (!aiApiKeyInput) return;
+    if (provider === 'gemini') {
+      aiApiKeyInput.placeholder = '貼上 Gemini Key (AIzaSy...)';
+    } else if (provider === 'openai') {
+      aiApiKeyInput.placeholder = '貼上 OpenAI Key (sk-...)';
+    } else if (provider === 'claude') {
+      aiApiKeyInput.placeholder = '貼上 Anthropic Key (sk-ant-...)';
+    }
+  }
+
+  function detectProviderFromKey(key) {
+    if (!key) return;
+    let detected = null;
+    if (key.startsWith('AIza')) {
+      detected = 'gemini';
+    } else if (key.startsWith('sk-ant')) {
+      detected = 'claude';
+    } else if (key.startsWith('sk-')) {
+      detected = 'openai';
+    }
+
+    if (detected && aiProviderSelect && aiProviderSelect.value !== detected) {
+      aiProviderSelect.value = detected;
+      updateProviderChipsUI(detected);
+      console.log(`[ChronoClicker] 依 API Key 自動切換至提供商: ${detected}`);
+    }
+  }
+
+  async function triggerScanModels(options = {}) {
+    const key = aiApiKeyInput ? aiApiKeyInput.value.trim() : '';
+    const provider = aiProviderSelect ? aiProviderSelect.value : 'gemini';
+
+    if (!key) {
+      if (!options.silentOnEmpty) alert('請先貼上 API Key 後再點擊掃描！');
+      return;
+    }
+
+    // UI 顯示掃描中狀態
+    if (scanSpinner) scanSpinner.style.display = 'inline-block';
+    if (scanBtnText) scanBtnText.textContent = '掃描中...';
+    if (btnScanModels) btnScanModels.disabled = true;
+
+    try {
+      const res = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({
+          action: 'SCAN_AI_MODELS',
+          payload: { provider, apiKey: key }
+        }, resolve);
+      });
+
+      if (res && res.success && Array.isArray(res.models) && res.models.length > 0) {
+        populateModelDropdown(res.models);
+        if (modelCountTag) modelCountTag.textContent = `共 ${res.models.length} 個可用模型`;
+
+        if (scanStatusBox && scanStatusBadge) {
+          scanStatusBox.style.display = 'flex';
+          scanStatusBadge.className = 'badge-tag scan-badge';
+          scanStatusBadge.textContent = `✨ 成功掃描到 ${res.models.length} 個模型 (${res.provider.toUpperCase()})`;
+        }
+
+        // 快取至 storage
+        chrome.storage.local.set({
+          scanned_models: res.models,
+          ai_provider: res.provider,
+          ai_model: aiModelSelect ? aiModelSelect.value : '',
+          ai_api_key: key
+        });
+
+        statusBannerText.textContent = `🤖 成功掃描到 ${res.models.length} 個最新 AI 模型！`;
+      } else {
+        const err = res?.error || '無法取得模型清單';
+        if (scanStatusBox && scanStatusBadge) {
+          scanStatusBox.style.display = 'flex';
+          scanStatusBadge.className = 'badge-tag offline';
+          scanStatusBadge.textContent = `⚠️ 掃描失敗: ${err}`;
+        }
+        if (!options.silentOnEmpty) {
+          alert(`掃描失敗: ${err}\n請確認 API Key 是否正確且具備存取權限。`);
+        }
+      }
+    } catch (err) {
+      console.warn('[Popup] Scan models error:', err);
+    } finally {
+      if (scanSpinner) scanSpinner.style.display = 'none';
+      if (scanBtnText) scanBtnText.textContent = '🔍 掃描模型';
+      if (btnScanModels) btnScanModels.disabled = false;
+    }
+  }
+
+  function populateModelDropdown(models, preferredModelId = null) {
+    if (!aiModelSelect) return;
+    const currentVal = preferredModelId || aiModelSelect.value;
+    aiModelSelect.innerHTML = '';
+
+    models.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.displayName || m.id;
+      if (m.description) opt.title = m.description;
+      aiModelSelect.appendChild(opt);
+    });
+
+    // 嘗試恢復原有選取，否則預設選取第一個
+    const match = Array.from(aiModelSelect.options).find(o => o.value === currentVal);
+    if (match) {
+      aiModelSelect.value = currentVal;
+    } else if (aiModelSelect.options.length > 0) {
+      aiModelSelect.selectedIndex = 0;
+    }
+  }
+
+  await initAiScanner();
+
+  // ────────────────────────────────────────────────
+  // 10. AI 驗證碼偵測與解碼
+  // ────────────────────────────────────────────────
+  if (btnDetectSolveCaptcha) {
+    btnDetectSolveCaptcha.addEventListener('click', async () => {
+      if (!currentTab || !currentTab.id) {
+        alert('未找到可操作的網頁分頁！');
+        return;
+      }
+
+      const apiKey = aiApiKeyInput ? aiApiKeyInput.value.trim() : '';
+      const model  = aiModelSelect ? aiModelSelect.value : 'gemini-2.0-flash';
+      if (!apiKey) {
+        alert('請先在「🤖 AI 設定」填入 API Key！');
+        return;
+      }
+
+      btnDetectSolveCaptcha.disabled = true;
+      btnDetectSolveCaptcha.textContent = '⏳ 偵測中...';
+
+      try {
+        // 1. 偵測驗證碼是否存在
+        const detectRes = await new Promise((resolve) => {
+          chrome.tabs.sendMessage(currentTab.id, { action: 'DETECT_CAPTCHA' }, resolve);
+        });
+
+        if (!detectRes || !detectRes.detected) {
+          if (captchaResultBox) captchaResultBox.style.display = 'block';
+          if (captchaTypeText) captchaTypeText.textContent = '未偵測到驗證碼';
+          if (captchaAnswerText) captchaAnswerText.textContent = '—';
+          btnDetectSolveCaptcha.textContent = '🔍 偵測並解碼驗證碼';
+          btnDetectSolveCaptcha.disabled = false;
+          return;
+        }
+
+        if (captchaTypeText) captchaTypeText.textContent = detectRes.type || '未知';
+        if (captchaResultBox) captchaResultBox.style.display = 'block';
+
+        // 2. 截圖
+        btnDetectSolveCaptcha.textContent = '📸 截圖中...';
+        const screenshotRes = await new Promise((resolve) => {
+          chrome.runtime.sendMessage({
+            action: 'CAPTURE_CAPTCHA_SCREENSHOT',
+            payload: { tabId: currentTab.id }
+          }, resolve);
+        });
+
+        if (!screenshotRes || !screenshotRes.success) {
+          if (captchaAnswerText) captchaAnswerText.textContent = `截圖失敗: ${screenshotRes?.error || '未知錯誤'}`;
+          return;
+        }
+
+        const base64 = screenshotRes.dataUrl.split(',')[1];
+        const prompt = aiPromptInput ? aiPromptInput.value.trim() : '';
+
+        // 3. 送至 AI 解析
+        btnDetectSolveCaptcha.textContent = '🤖 AI 解析中...';
+        const solveRes = await new Promise((resolve) => {
+          chrome.runtime.sendMessage({
+            action: 'SOLVE_CAPTCHA_AI',
+            payload: { model, apiKey, imageBase64: base64, prompt }
+          }, resolve);
+        });
+
+        if (!solveRes || !solveRes.success) {
+          if (captchaAnswerText) captchaAnswerText.textContent = `解析失敗: ${solveRes?.error || '未知錯誤'}`;
+          return;
+        }
+
+        lastCaptchaAnswer = solveRes.answer;
+        if (captchaAnswerText) captchaAnswerText.textContent = lastCaptchaAnswer || '(空回應)';
+        if (statusBannerText) statusBannerText.textContent = `🤖 AI 解碼完成：${lastCaptchaAnswer}`;
+
+      } finally {
+        btnDetectSolveCaptcha.textContent = '🔍 偵測並解碼驗證碼';
+        btnDetectSolveCaptcha.disabled = false;
+      }
+    });
+  }
+
+  // 填入驗證碼答案按鈕
+  if (btnFillCaptchaAnswer) {
+    btnFillCaptchaAnswer.addEventListener('click', () => {
+      if (!currentTab || !currentTab.id || !lastCaptchaAnswer) return;
+      chrome.tabs.sendMessage(currentTab.id, {
+        action: 'CAPTCHA_FILL_ANSWER',
+        payload: { answer: lastCaptchaAnswer }
+      }, (res) => {
+        if (res && res.success) {
+          statusBannerText.textContent = `✅ 已填入驗證碼：${lastCaptchaAnswer}`;
+        } else {
+          statusBannerText.textContent = '⚠️ 找不到驗證碼輸入框，請手動填入';
+        }
+      });
+    });
+  }
+
+  // ────────────────────────────────────────────────
+  // 11. 當前分頁與網頁配置載入
   // ────────────────────────────────────────────────
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -229,12 +755,21 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch {
         currentDomain = 'unknown';
       }
-      currentDomainBadge.textContent = currentDomain;
+      if (currentDomainBadge) currentDomainBadge.textContent = currentDomain;
 
       const isTp = currentDomain.includes('ticketplus.com.tw');
       if (isTp) {
         if (tpBadge) tpBadge.style.display = 'inline-block';
         if (useCdpToggle) useCdpToggle.checked = true;
+        if (tpActiveIndicator) {
+          tpActiveIndicator.classList.add('active');
+          tpActiveIndicator.textContent = '🟢 已連線 Ticket Plus';
+        }
+      } else {
+        if (tpActiveIndicator) {
+          tpActiveIndicator.classList.remove('active');
+          tpActiveIndicator.textContent = '⚪ 未偵測到售票頁面';
+        }
       }
 
       await loadConfigForDomain(currentDomain);
@@ -252,68 +787,44 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // ────────────────────────────────────────────────
-  // 4. 即時時鐘
+  // 12. 元素選取器與座標擷取
   // ────────────────────────────────────────────────
-  function renderClock() {
-    const accurateNow = TimeSync.getAccurateNow();
-    const formatted = TimeSync.formatInTimezone(accurateNow, selectedTimezone);
-    liveClockTime.childNodes[0].nodeValue = formatted.timeString;
-    liveClockMs.textContent = `.${formatted.msString}`;
-    liveClockDate.textContent = `${formatted.dateString} (${selectedTimezone})`;
-    requestAnimationFrame(renderClock);
-  }
-  requestAnimationFrame(renderClock);
-
-  // ────────────────────────────────────────────────
-  // 5. 快速時間推算
-  // ────────────────────────────────────────────────
-  function addTimeOffset(secondsToAdd, roundToNextHour = false) {
-    const accurateNow = TimeSync.getAccurateNow();
-    let targetTime = accurateNow + secondsToAdd * 1000;
-    if (roundToNextHour) {
-      const d = new Date(accurateNow);
-      d.setHours(d.getHours() + 1, 0, 0, 0);
-      targetTime = d.getTime();
-    }
-    const fmt = TimeSync.formatInTimezone(targetTime, selectedTimezone);
-    const [year, month, day] = fmt.dateString.split('-');
-    const [h, m, s] = fmt.timeString.split(':');
-    targetDateInput.value = `${year}-${month}-${day}`;
-    targetHourInput.value = h;
-    targetMinuteInput.value = m;
-    targetSecondInput.value = s;
-    targetMsInput.value = '000';
-    saveCurrentConfig();
-  }
-
-  btnPlus10s.addEventListener('click', () => addTimeOffset(10));
-  btnPlus30s.addEventListener('click', () => addTimeOffset(30));
-  btnPlus1m.addEventListener('click', () => addTimeOffset(60));
-  btnNextHour.addEventListener('click', () => addTimeOffset(0, true));
-
-  if (!targetHourInput.value) addTimeOffset(60);
-
-  // ────────────────────────────────────────────────
-  // 6. 元素選取器
-  // ────────────────────────────────────────────────
-  btnStartPicker.addEventListener('click', async () => {
-    if (!currentTab || !currentTab.id) return;
-    statusBannerText.textContent = '🎯 請切換至網頁選取元素，點擊選取或按 ESC 取消...';
-    chrome.tabs.sendMessage(currentTab.id, { action: 'ACTIVATE_PICKER' }, (res) => {
-      if (chrome.runtime.lastError) {
-        statusBannerText.textContent = '⚠️ 請重新整理該網頁後再試';
-        return;
-      }
-      window.close();
+  if (btnStartPicker) {
+    btnStartPicker.addEventListener('click', async () => {
+      if (!currentTab || !currentTab.id) return;
+      statusBannerText.textContent = '🎯 請切換至網頁選取元素，點擊選取或按 ESC 取消...';
+      chrome.tabs.sendMessage(currentTab.id, { action: 'ACTIVATE_PICKER' }, () => {
+        if (chrome.runtime.lastError) {
+          statusBannerText.textContent = '⚠️ 請重新整理該網頁後再試';
+          return;
+        }
+        window.close();
+      });
     });
-  });
+  }
+
+  if (btnCaptureCoords) {
+    btnCaptureCoords.addEventListener('click', async () => {
+      if (!currentTab || !currentTab.id) return;
+      statusBannerText.textContent = '📍 請切換至目標網頁，點擊想要的位置以擷取座標...';
+      chrome.tabs.sendMessage(currentTab.id, { action: 'ACTIVATE_COORD_CAPTURE' }, () => {
+        if (chrome.runtime.lastError) {
+          statusBannerText.textContent = '⚠️ 請先重新整理目標網頁';
+          return;
+        }
+        window.close();
+      });
+    });
+  }
 
   // 監聽選取結果訊息
   chrome.runtime.onMessage.addListener((req) => {
     if (req.action === 'ELEMENT_PICKED') {
       const p = req.payload;
       targetElementInfo = p;
-      targetPreviewText.textContent = `${p.tagName.toUpperCase()}${p.id ? '#' + p.id : ''} "${p.text || ''}"`;
+      if (targetPreviewText) {
+        targetPreviewText.textContent = `${p.tagName.toUpperCase()}${p.id ? '#' + p.id : ''} "${p.text || ''}"`;
+      }
       if (targetSelectorInput) targetSelectorInput.value = p.selector || '';
       if (targetXpathInput && p.xpath) targetXpathInput.value = p.xpath;
       if (targetSearchText && p.searchText) targetSearchText.value = p.searchText;
@@ -341,14 +852,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.querySelector('.ftab[data-tab="coord"]')?.classList.add('active');
       document.getElementById('fpanel-coord')?.classList.add('active');
 
-      targetPreviewText.textContent = `📍 頁面座標 (X:${x}, Y:${y})`;
+      if (targetPreviewText) targetPreviewText.textContent = `📍 頁面座標 (X:${x}, Y:${y})`;
       statusBannerText.textContent = `✅ 已擷取座標 X:${x}, Y:${y}`;
       saveCurrentConfig();
     }
   });
 
   // ────────────────────────────────────────────────
-  // 7. 自動儲存
+  // 13. 設定自動儲存
   // ────────────────────────────────────────────────
   [
     targetDateInput, targetHourInput, targetMinuteInput, targetSecondInput, targetMsInput,
@@ -363,113 +874,122 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // ────────────────────────────────────────────────
-  // 8. 立即測試點擊
+  // 14. 立即測試點擊
   // ────────────────────────────────────────────────
-  btnTestClick.addEventListener('click', async () => {
-    if (!currentTab || !currentTab.id) return;
-    const config = collectCurrentConfig();
-    if (config.useCdp || (currentDomain && currentDomain.includes('ticketplus.com.tw'))) {
-      await new Promise(r => chrome.runtime.sendMessage({ action: 'PRE_ATTACH_CDP', payload: { tabId: currentTab.id } }, r));
-    }
-    chrome.tabs.sendMessage(currentTab.id, { action: 'TEST_CLICK', payload: config }, () => {
-      if (chrome.runtime.lastError) {
-        alert('無法發送測試點擊，請確認該網頁已重新整理且允許擴充功能。');
-      } else {
-        statusBannerText.textContent = '⚡ 已在當前網頁觸發測試點擊！';
+  if (btnTestClick) {
+    btnTestClick.addEventListener('click', async () => {
+      if (!currentTab || !currentTab.id) return;
+      const config = collectCurrentConfig();
+      if (config.useCdp || (currentDomain && currentDomain.includes('ticketplus.com.tw'))) {
+        await new Promise(r => chrome.runtime.sendMessage({ action: 'PRE_ATTACH_CDP', payload: { tabId: currentTab.id } }, r));
       }
+      chrome.tabs.sendMessage(currentTab.id, { action: 'TEST_CLICK', payload: config }, () => {
+        if (chrome.runtime.lastError) {
+          alert('無法發送測試點擊，請確認該網頁已重新整理且允許擴充功能。');
+        } else {
+          statusBannerText.textContent = '⚡ 已在當前網頁觸發測試點擊！';
+        }
+      });
     });
-  });
+  }
 
   // ────────────────────────────────────────────────
-  // 9. 單目標定時倒數
+  // 15. 單目標定時倒數
   // ────────────────────────────────────────────────
-  btnStartCountdown.addEventListener('click', () => {
-    if (!currentTab || !currentTab.id) {
-      alert('未找到可操作的網頁分頁！');
-      return;
-    }
-    const config = collectCurrentConfig();
-    if (!config.selector && !config.xpath && !config.searchText && (!config.coords || !config.coords.x)) {
-      alert('請先點擊「🎯 選擇網頁元素」或手動輸入目標 Selector！');
-      return;
-    }
-
-    const targetEpoch = TimeSync.parseTargetToEpoch(
-      config.date, `${config.hour}:${config.minute}:${config.second}`, config.ms, selectedTimezone
-    );
-    const nowEpoch = TimeSync.getAccurateNow();
-    const diff = targetEpoch - nowEpoch;
-    if (diff <= 0) {
-      alert(`設定的目標時間已過去！\n目標: ${new Date(targetEpoch).toISOString()}\n目前: ${new Date(nowEpoch).toISOString()}`);
-      return;
-    }
-
-    const payload = {
-      ...config,
-      targetEpoch,
-      offset: TimeSync.offset,
-      formattedTarget: `${config.date} ${config.hour}:${config.minute}:${config.second}.${config.ms}`,
-      timezoneLabel: tzSelect.options[tzSelect.selectedIndex].text
-    };
-
-    if (config.useCdp || (currentDomain && currentDomain.includes('ticketplus.com.tw'))) {
-      chrome.runtime.sendMessage({ action: 'PRE_ATTACH_CDP', payload: { tabId: currentTab.id } });
-    }
-
-    chrome.tabs.sendMessage(currentTab.id, { action: 'START_COUNTDOWN', payload }, () => {
-      if (chrome.runtime.lastError) {
-        alert('啟動失敗：請先重新整理目標網頁以載入點擊腳本！');
-      } else {
-        statusBanner.className = 'status-banner active';
-        statusBannerText.textContent = `🚀 已啟動！剩餘 ${(diff / 1000).toFixed(1)} 秒`;
+  if (btnStartCountdown) {
+    btnStartCountdown.addEventListener('click', () => {
+      if (!currentTab || !currentTab.id) {
+        alert('未找到可操作的網頁分頁！');
+        return;
       }
-    });
-    saveCurrentConfig();
-  });
+      const config = collectCurrentConfig();
+      if (!config.selector && !config.xpath && !config.searchText && (!config.coords || !config.coords.x)) {
+        alert('請先點擊「🎯 選擇網頁元素」或手動輸入目標 Selector！');
+        return;
+      }
 
-  btnStopCountdown.addEventListener('click', () => {
-    if (!currentTab || !currentTab.id) return;
-    chrome.runtime.sendMessage({ action: 'DETACH_CDP', payload: { tabId: currentTab.id } });
-    chrome.tabs.sendMessage(currentTab.id, { action: 'STOP_COUNTDOWN' }, () => {
-      statusBanner.className = 'status-banner';
-      statusBannerText.textContent = '⏹ 倒數已終止';
+      const targetEpoch = TimeSync.parseTargetToEpoch(
+        config.date, `${config.hour}:${config.minute}:${config.second}`, config.ms, selectedTimezone
+      );
+      const nowEpoch = TimeSync.getAccurateNow();
+      const diff = targetEpoch - nowEpoch;
+      if (diff <= 0) {
+        alert(`設定的目標時間已過去！\n目標: ${new Date(targetEpoch).toISOString()}\n目前: ${new Date(nowEpoch).toISOString()}`);
+        return;
+      }
+
+      const payload = {
+        ...config,
+        targetEpoch,
+        offset: TimeSync.offset,
+        formattedTarget: `${config.date} ${config.hour}:${config.minute}:${config.second}.${config.ms}`,
+        timezoneLabel: tzSelect.options[tzSelect.selectedIndex]?.text || selectedTimezone
+      };
+
+      if (config.useCdp || (currentDomain && currentDomain.includes('ticketplus.com.tw'))) {
+        chrome.runtime.sendMessage({ action: 'PRE_ATTACH_CDP', payload: { tabId: currentTab.id } });
+      }
+
+      chrome.tabs.sendMessage(currentTab.id, { action: 'START_COUNTDOWN', payload }, () => {
+        if (chrome.runtime.lastError) {
+          alert('啟動失敗：請先重新整理目標網頁以載入點擊腳本！');
+        } else {
+          statusBanner.className = 'status-banner active';
+          statusBannerText.textContent = `🚀 已啟動！剩餘 ${(diff / 1000).toFixed(1)} 秒`;
+        }
+      });
+      saveCurrentConfig();
     });
-  });
+  }
+
+  if (btnStopCountdown) {
+    btnStopCountdown.addEventListener('click', () => {
+      if (!currentTab || !currentTab.id) return;
+      chrome.runtime.sendMessage({ action: 'DETACH_CDP', payload: { tabId: currentTab.id } });
+      chrome.tabs.sendMessage(currentTab.id, { action: 'STOP_COUNTDOWN' }, () => {
+        statusBanner.className = 'status-banner';
+        statusBannerText.textContent = '⏹ 倒數已終止';
+      });
+    });
+  }
 
   // ────────────────────────────────────────────────
-  // 功能 A：多目標序列點擊
+  // 16. 多目標序列點擊
   // ────────────────────────────────────────────────
-  btnAddTarget.addEventListener('click', () => {
-    if (multiTargets.length >= 10) {
-      statusBannerText.textContent = '⚠️ 最多支援 10 個點擊目標';
-      return;
-    }
-    const id = Date.now();
-    const newTarget = {
-      id,
-      label: `目標 ${multiTargets.length + 1}`,
-      selector: '',
-      xpath: '',
-      searchText: '',
-      coords: { x: 0, y: 0 },
-      delayMs: multiTargets.length * 200,
-      repeat: 1,
-      interval: 50,
-      useCdp: false,
-      useCoordFallback: true
-    };
-    multiTargets.push(newTarget);
-    renderMultiTargetList();
-    saveMultiTargets();
-  });
+  if (btnAddTarget) {
+    btnAddTarget.addEventListener('click', () => {
+      if (multiTargets.length >= 10) {
+        statusBannerText.textContent = '⚠️ 最多支援 10 個點擊目標';
+        return;
+      }
+      const id = Date.now();
+      const newTarget = {
+        id,
+        label: `目標 ${multiTargets.length + 1}`,
+        selector: '',
+        xpath: '',
+        searchText: '',
+        coords: { x: 0, y: 0 },
+        delayMs: multiTargets.length * 200,
+        repeat: 1,
+        interval: 50,
+        useCdp: false,
+        useCoordFallback: true
+      };
+      multiTargets.push(newTarget);
+      renderMultiTargetList();
+      saveMultiTargets();
+    });
+  }
 
   function renderMultiTargetList() {
+    if (!multiTargetList) return;
     multiTargetList.innerHTML = '';
     if (multiTargets.length === 0) {
-      multiTargetEmpty.style.display = 'block';
+      if (multiTargetEmpty) multiTargetEmpty.style.display = 'block';
       return;
     }
-    multiTargetEmpty.style.display = 'none';
+    if (multiTargetEmpty) multiTargetEmpty.style.display = 'none';
 
     multiTargets.forEach((t, idx) => {
       const item = document.createElement('div');
@@ -482,7 +1002,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <span class="drag-handle" title="拖曳調整順序">⠿</span>
           <span class="target-index-badge">${idx + 1}</span>
           <span class="target-item-label">${escapeHtml(t.label || `目標 ${idx + 1}`)}</span>
-          <button class="btn-remove-target" data-id="${t.id}" title="移除此目標">✕</button>
+          <button type="button" class="btn-remove-target" data-id="${t.id}" title="移除此目標">✕</button>
         </div>
         <div class="target-item-inputs">
           <div class="target-input-group">
@@ -505,21 +1025,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         </div>
       `;
 
-      // 移除按鈕
+      // 移除
       item.querySelector('.btn-remove-target').addEventListener('click', (e) => {
-        const removeId = parseInt(e.currentTarget.dataset.id);
+        const removeId = parseInt(e.currentTarget.dataset.id, 10);
         multiTargets = multiTargets.filter(x => x.id !== removeId);
         renderMultiTargetList();
         saveMultiTargets();
       });
 
-      // 欄位變更
+      // 輸入更新
       item.querySelector('.ti-selector').addEventListener('input', (e) => {
         const val = e.target.value.trim();
-        const tid = parseInt(e.target.dataset.id);
+        const tid = parseInt(e.target.dataset.id, 10);
         const tgt = multiTargets.find(x => x.id === tid);
         if (!tgt) return;
-        // 智慧判斷類型
         if (val.startsWith('//') || val.startsWith('(//')) {
           tgt.xpath = val; tgt.selector = ''; tgt.searchText = '';
         } else if (val.startsWith('#') || val.startsWith('.') || val.includes('[') || val.includes('>')) {
@@ -531,24 +1050,24 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
 
       item.querySelector('.ti-label').addEventListener('input', (e) => {
-        const tid = parseInt(e.target.dataset.id);
+        const tid = parseInt(e.target.dataset.id, 10);
         const tgt = multiTargets.find(x => x.id === tid);
         if (tgt) { tgt.label = e.target.value; saveMultiTargets(); }
       });
 
       item.querySelector('.ti-delay').addEventListener('input', (e) => {
-        const tid = parseInt(e.target.dataset.id);
+        const tid = parseInt(e.target.dataset.id, 10);
         const tgt = multiTargets.find(x => x.id === tid);
-        if (tgt) { tgt.delayMs = parseInt(e.target.value) || 0; saveMultiTargets(); }
+        if (tgt) { tgt.delayMs = parseInt(e.target.value, 10) || 0; saveMultiTargets(); }
       });
 
       item.querySelector('.ti-repeat').addEventListener('input', (e) => {
-        const tid = parseInt(e.target.dataset.id);
+        const tid = parseInt(e.target.dataset.id, 10);
         const tgt = multiTargets.find(x => x.id === tid);
-        if (tgt) { tgt.repeat = parseInt(e.target.value) || 1; saveMultiTargets(); }
+        if (tgt) { tgt.repeat = parseInt(e.target.value, 10) || 1; saveMultiTargets(); }
       });
 
-      // HTML5 Drag & Drop 排序
+      // 拖曳排序
       item.addEventListener('dragstart', (e) => {
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', t.id.toString());
@@ -564,7 +1083,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       item.addEventListener('drop', (e) => {
         e.preventDefault();
         item.classList.remove('drag-over');
-        const fromId = parseInt(e.dataTransfer.getData('text/plain'));
+        const fromId = parseInt(e.dataTransfer.getData('text/plain'), 10);
         if (fromId === t.id) return;
         const fromIdx = multiTargets.findIndex(x => x.id === fromId);
         const toIdx = multiTargets.findIndex(x => x.id === t.id);
@@ -579,201 +1098,78 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // 啟動多目標倒數
-  btnStartMultiCountdown.addEventListener('click', () => {
-    if (!currentTab || !currentTab.id) {
-      alert('未找到可操作的網頁分頁！');
-      return;
-    }
-    if (multiTargets.length === 0) {
-      alert('請先在「多點擊」面板新增至少一個目標！');
-      return;
-    }
-
-    const config = collectCurrentConfig();
-    const targetEpoch = TimeSync.parseTargetToEpoch(
-      config.date, `${config.hour}:${config.minute}:${config.second}`, config.ms, selectedTimezone
-    );
-    const nowEpoch = TimeSync.getAccurateNow();
-    const diff = targetEpoch - nowEpoch;
-    if (diff <= 0) {
-      alert('請先在主面板設定未來的目標時間！');
-      return;
-    }
-
-    // 按 delayMs 排序後發送，並確保頂層之 useCdp 與 useSystemMouse 參數灌注至子目標
-    const sortedTargets = multiTargets.map(t => ({
-      ...t,
-      useCdp: t.useCdp !== undefined ? t.useCdp : config.useCdp,
-      useSystemMouse: t.useSystemMouse !== undefined ? t.useSystemMouse : config.useSystemMouse
-    })).sort((a, b) => (a.delayMs || 0) - (b.delayMs || 0));
-
-    chrome.runtime.sendMessage({
-      action: 'SCHEDULE_MULTI_CLICK',
-      payload: {
-        tabId: currentTab.id,
-        targets: sortedTargets,
-        targetEpoch,
-        offset: TimeSync.offset,
-        useCdp: config.useCdp,
-        useSystemMouse: config.useSystemMouse
-      }
-    }, (res) => {
-      if (chrome.runtime.lastError || !res || !res.success) {
-        statusBannerText.textContent = '❌ 多目標排程失敗';
+  if (btnStartMultiCountdown) {
+    btnStartMultiCountdown.addEventListener('click', () => {
+      if (!currentTab || !currentTab.id) {
+        alert('未找到可操作的網頁分頁！');
         return;
       }
-      statusBanner.className = 'status-banner active';
-      statusBannerText.textContent = `🚀 多目標已排程！共 ${sortedTargets.length} 個目標，${(diff / 1000).toFixed(1)} 秒後觸發`;
-    });
-  });
+      if (multiTargets.length === 0) {
+        alert('請先在「多點擊」面板新增至少一個目標！');
+        return;
+      }
 
-  btnStopMultiCountdown.addEventListener('click', () => {
-    if (!currentTab || !currentTab.id) return;
-    chrome.runtime.sendMessage({ action: 'DETACH_CDP', payload: { tabId: currentTab.id } });
-    chrome.tabs.sendMessage(currentTab.id, { action: 'STOP_COUNTDOWN' }, () => {
-      statusBanner.className = 'status-banner';
-      statusBannerText.textContent = '⏹ 多目標倒數已終止';
+      const config = collectCurrentConfig();
+      const targetEpoch = TimeSync.parseTargetToEpoch(
+        config.date, `${config.hour}:${config.minute}:${config.second}`, config.ms, selectedTimezone
+      );
+      const nowEpoch = TimeSync.getAccurateNow();
+      const diff = targetEpoch - nowEpoch;
+      if (diff <= 0) {
+        alert('請先在主面板設定未來的目標時間！');
+        return;
+      }
+
+      const sortedTargets = multiTargets.map(t => ({
+        ...t,
+        useCdp: t.useCdp !== undefined ? t.useCdp : config.useCdp,
+        useSystemMouse: t.useSystemMouse !== undefined ? t.useSystemMouse : config.useSystemMouse
+      })).sort((a, b) => (a.delayMs || 0) - (b.delayMs || 0));
+
+      chrome.runtime.sendMessage({
+        action: 'SCHEDULE_MULTI_CLICK',
+        payload: {
+          tabId: currentTab.id,
+          targets: sortedTargets,
+          targetEpoch,
+          offset: TimeSync.offset,
+          useCdp: config.useCdp,
+          useSystemMouse: config.useSystemMouse
+        }
+      }, (res) => {
+        if (chrome.runtime.lastError || !res || !res.success) {
+          statusBannerText.textContent = '❌ 多目標排程失敗';
+          return;
+        }
+        statusBanner.className = 'status-banner active';
+        statusBannerText.textContent = `🚀 多目標已排程！共 ${sortedTargets.length} 個目標，${(diff / 1000).toFixed(1)} 秒後觸發`;
+      });
     });
-  });
+  }
+
+  if (btnStopMultiCountdown) {
+    btnStopMultiCountdown.addEventListener('click', () => {
+      if (!currentTab || !currentTab.id) return;
+      chrome.runtime.sendMessage({ action: 'DETACH_CDP', payload: { tabId: currentTab.id } });
+      chrome.tabs.sendMessage(currentTab.id, { action: 'STOP_COUNTDOWN' }, () => {
+        statusBanner.className = 'status-banner';
+        statusBannerText.textContent = '⏹ 多目標倒數已終止';
+      });
+    });
+  }
 
   // ────────────────────────────────────────────────
-  // 功能 B：AI 驗證碼識別
-  // ────────────────────────────────────────────────
-
-  // 顯示/隱藏 API Key
-  btnToggleApiKey.addEventListener('click', () => {
-    const isHidden = aiApiKeyInput.type === 'password';
-    aiApiKeyInput.type = isHidden ? 'text' : 'password';
-    btnToggleApiKey.textContent = isHidden ? '🙈' : '👁';
-  });
-
-  // 儲存 AI 設定
-  btnSaveAiSettings.addEventListener('click', async () => {
-    const model = aiModelSelect.value;
-    const apiKey = aiApiKeyInput.value.trim();
-    const prompt = aiPromptInput.value.trim();
-    if (!apiKey) {
-      alert('請輸入 API Key！');
-      return;
-    }
-    await chrome.storage.local.set({
-      ai_model: model,
-      ai_api_key: apiKey,
-      ai_prompt: prompt
-    });
-    statusBannerText.textContent = '✅ AI 設定已儲存';
-  });
-
-  // 讀取 AI 設定
-  const aiSettings = await chrome.storage.local.get(['ai_model', 'ai_api_key', 'ai_prompt']);
-  if (aiSettings.ai_model) aiModelSelect.value = aiSettings.ai_model;
-  if (aiSettings.ai_api_key) aiApiKeyInput.value = aiSettings.ai_api_key;
-  if (aiSettings.ai_prompt) aiPromptInput.value = aiSettings.ai_prompt;
-
-  // 偵測 + 解碼驗證碼
-  btnDetectSolveCaptcha.addEventListener('click', async () => {
-    if (!currentTab || !currentTab.id) {
-      alert('未找到可操作的網頁分頁！');
-      return;
-    }
-
-    const apiKey = aiApiKeyInput.value.trim();
-    const model  = aiModelSelect.value;
-    if (!apiKey) {
-      alert('請先在「⚙️ AI 設定」填入 API Key！');
-      return;
-    }
-
-    btnDetectSolveCaptcha.disabled = true;
-    btnDetectSolveCaptcha.textContent = '⏳ 偵測中...';
-
-    try {
-      // 1. 偵測驗證碼是否存在
-      const detectRes = await new Promise((resolve) => {
-        chrome.tabs.sendMessage(currentTab.id, { action: 'DETECT_CAPTCHA' }, resolve);
-      });
-
-      if (!detectRes || !detectRes.detected) {
-        captchaResultBox.style.display = 'flex';
-        captchaTypeText.textContent = '未偵測到驗證碼';
-        captchaAnswerText.textContent = '—';
-        btnDetectSolveCaptcha.textContent = '🔍 偵測並解碼驗證碼';
-        btnDetectSolveCaptcha.disabled = false;
-        return;
-      }
-      captchaTypeText.textContent = detectRes.type || '未知';
-      captchaResultBox.style.display = 'flex';
-
-      // 2. 截圖
-      btnDetectSolveCaptcha.textContent = '📸 截圖中...';
-      const screenshotRes = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({
-          action: 'CAPTURE_CAPTCHA_SCREENSHOT',
-          payload: { tabId: currentTab.id }
-        }, resolve);
-      });
-
-      if (!screenshotRes || !screenshotRes.success) {
-        captchaAnswerText.textContent = `截圖失敗: ${screenshotRes?.error || '未知錯誤'}`;
-        return;
-      }
-
-      // 3. 取出 base64（去除 data:image/png;base64, 前綴）
-      const base64 = screenshotRes.dataUrl.split(',')[1];
-      const prompt = aiPromptInput.value.trim();
-
-      // 4. 送至 AI 解析
-      btnDetectSolveCaptcha.textContent = '🤖 AI 解析中...';
-      const solveRes = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({
-          action: 'SOLVE_CAPTCHA_AI',
-          payload: { model, apiKey, imageBase64: base64, prompt }
-        }, resolve);
-      });
-
-      if (!solveRes || !solveRes.success) {
-        captchaAnswerText.textContent = `解析失敗: ${solveRes?.error || '未知錯誤'}`;
-        return;
-      }
-
-      lastCaptchaAnswer = solveRes.answer;
-      captchaAnswerText.textContent = lastCaptchaAnswer || '(空回應)';
-      statusBannerText.textContent = `🤖 AI 解碼完成：${lastCaptchaAnswer}`;
-
-    } finally {
-      btnDetectSolveCaptcha.textContent = '🔍 偵測並解碼驗證碼';
-      btnDetectSolveCaptcha.disabled = false;
-    }
-  });
-
-  // 填入驗證碼答案
-  btnFillCaptchaAnswer.addEventListener('click', () => {
-    if (!currentTab || !currentTab.id || !lastCaptchaAnswer) return;
-    chrome.tabs.sendMessage(currentTab.id, {
-      action: 'CAPTCHA_FILL_ANSWER',
-      payload: { answer: lastCaptchaAnswer }
-    }, (res) => {
-      if (res && res.success) {
-        statusBannerText.textContent = `✅ 已填入驗證碼：${lastCaptchaAnswer}`;
-      } else {
-        statusBannerText.textContent = '⚠️ 找不到驗證碼輸入框，請手動填入';
-      }
-    });
-  });
-
-  // ────────────────────────────────────────────────
-  // 輔助函式：Config 收集、儲存、讀取
+  // 17. 輔助函式：收集、儲存、讀取配置
   // ────────────────────────────────────────────────
   function collectCurrentConfig() {
     const pad = (v, len = 2) => String(v || 0).padStart(len, '0');
     const activeTab = document.querySelector('.ftab.active')?.dataset.tab || 'css';
     return {
-      date: targetDateInput.value,
-      hour: pad(targetHourInput.value),
-      minute: pad(targetMinuteInput.value),
-      second: pad(targetSecondInput.value),
-      ms: pad(targetMsInput.value, 3),
+      date: targetDateInput?.value || '',
+      hour: pad(targetHourInput?.value),
+      minute: pad(targetMinuteInput?.value),
+      second: pad(targetSecondInput?.value),
+      ms: pad(targetMsInput?.value, 3),
       timezone: selectedTimezone,
       activeTab,
       selector: targetSelectorInput?.value.trim() || '',
@@ -794,12 +1190,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       useShadowDom: useShadowDomToggle?.checked || false,
       useIframeSearch: useIframeSearchToggle?.checked || false,
       useCoordFallback: useCoordFallbackToggle?.checked !== false,
-      repeat: parseInt(repeatCountInput.value, 10) || 1,
-      interval: parseInt(repeatIntervalInput.value, 10) || 50,
+      repeat: parseInt(repeatCountInput?.value, 10) || 1,
+      interval: parseInt(repeatIntervalInput?.value, 10) || 50,
       useCdp: useCdpToggle?.checked || false,
       useSystemMouse: useSystemMouseToggle?.checked || false,
       pollDuration: parseInt(pollDurationInput?.value, 10) || (currentDomain && currentDomain.includes('ticketplus.com.tw') ? 3000 : 2000),
-      targetPreview: targetPreviewText.textContent
+      targetPreview: targetPreviewText?.textContent || ''
     };
   }
 
@@ -850,7 +1246,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (cfg.selector && targetSelectorInput) targetSelectorInput.value = cfg.selector;
         if (cfg.xpath && targetXpathInput) targetXpathInput.value = cfg.xpath;
         if (cfg.searchText && targetSearchText) targetSearchText.value = cfg.searchText;
-        if (cfg.targetPreview) targetPreviewText.textContent = cfg.targetPreview;
+        if (cfg.targetPreview && targetPreviewText) targetPreviewText.textContent = cfg.targetPreview;
         if (cfg.useCoords !== undefined && useCoordsToggle) useCoordsToggle.checked = cfg.useCoords;
         if (cfg.coords) {
           if (coordXInput) coordXInput.value = cfg.coords.x || '';
@@ -860,8 +1256,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (useShadowDomToggle && cfg.useShadowDom !== undefined) useShadowDomToggle.checked = cfg.useShadowDom;
         if (useIframeSearchToggle && cfg.useIframeSearch !== undefined) useIframeSearchToggle.checked = cfg.useIframeSearch;
         if (useCoordFallbackToggle && cfg.useCoordFallback !== undefined) useCoordFallbackToggle.checked = cfg.useCoordFallback;
-        if (cfg.repeat) repeatCountInput.value = cfg.repeat;
-        if (cfg.interval) repeatIntervalInput.value = cfg.interval;
+        if (cfg.repeat && repeatCountInput) repeatCountInput.value = cfg.repeat;
+        if (cfg.interval && repeatIntervalInput) repeatIntervalInput.value = cfg.interval;
         if (useCdpToggle) {
           useCdpToggle.checked = cfg.useCdp !== undefined ? cfg.useCdp : isTpDomain;
         }
@@ -881,9 +1277,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // ────────────────────────────────────────────────
-  // 小工具
-  // ────────────────────────────────────────────────
   function escapeHtml(str) {
     return String(str)
       .replace(/&/g, '&amp;')
@@ -891,6 +1284,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
   }
+
   function escapeAttr(str) {
     return String(str || '').replace(/"/g, '&quot;');
   }

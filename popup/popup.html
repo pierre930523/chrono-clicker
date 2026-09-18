@@ -6,41 +6,61 @@
   <title>ChronoClicker</title>
   <link rel="stylesheet" href="popup.css">
 </head>
-<body>
+<body data-theme="system">
   <div class="app-container">
     <!-- 頂部標頭 -->
     <header class="header">
       <div class="logo">
-        <span class="logo-icon">⚡</span>
+        <div class="logo-icon-wrapper">
+          <span class="logo-icon">⚡</span>
+        </div>
         <div class="logo-text">
-          <h1>ChronoClicker</h1>
+          <div class="logo-title-row">
+            <h1>ChronoClicker</h1>
+            <span class="version-badge">v1.2</span>
+          </div>
           <span class="logo-sub">高精準世界時間倒數點擊</span>
         </div>
       </div>
-      <div class="sync-status" id="syncStatusBadge" title="點擊重新同步原子鐘">
-        <span class="status-dot"></span>
-        <span id="syncStatusText">校準中...</span>
+
+      <div class="header-right">
+        <!-- 主題切換按鈕組 -->
+        <div class="theme-switch-group" id="themeSwitchGroup" title="切換主題 (跟隨系統 / 深色 / 淺色)">
+          <button type="button" class="theme-btn active" data-theme="system" title="跟隨系統">💻</button>
+          <button type="button" class="theme-btn" data-theme="dark" title="極致黑深色模式">🌙</button>
+          <button type="button" class="theme-btn" data-theme="light" title="優雅白淺色模式">☀️</button>
+        </div>
+
+        <!-- 原子鐘同步狀態 -->
+        <div class="sync-status" id="syncStatusBadge" title="點擊重新校準原子鐘">
+          <span class="status-dot"></span>
+          <span id="syncStatusText">校準中...</span>
+        </div>
       </div>
     </header>
 
-    <!-- 主分頁切換 -->
-    <div class="main-tabs">
+    <!-- 主分頁導覽 -->
+    <nav class="main-tabs">
       <button class="main-tab active" data-main-tab="main">🎯 主要</button>
+      <button class="main-tab" data-main-tab="ticketplus">🎫 遠大售票</button>
       <button class="main-tab" data-main-tab="multi">🔗 多點擊</button>
-      <button class="main-tab" data-main-tab="ai">⚙️ AI 設定</button>
-    </div>
+      <button class="main-tab" data-main-tab="ai">🤖 AI 設定</button>
+    </nav>
 
-    <!-- ══════════════════ 主要面板 ══════════════════ -->
+    <!-- ══════════════════ 1. 主要面板 ══════════════════ -->
     <div class="main-panel active" id="mainpanel-main">
 
       <!-- 世界時區選擇與即時時鐘 -->
       <section class="clock-card">
         <div class="tz-select-row">
-          <label for="tzSelect">🌍 基準世界時區：</label>
+          <label for="tzSelect"><span class="icon">🌍</span> 基準世界時區：</label>
           <select id="tzSelect" class="styled-select"></select>
         </div>
         <div class="clock-display">
-          <div class="clock-time" id="liveClockTime">00:00:00<span class="clock-ms" id="liveClockMs">.000</span></div>
+          <div class="clock-time-wrapper">
+            <span class="clock-time" id="liveClockTime">00:00:00</span>
+            <span class="clock-ms" id="liveClockMs">.000</span>
+          </div>
           <div class="clock-date" id="liveClockDate">2026-00-00</div>
         </div>
       </section>
@@ -48,7 +68,7 @@
       <!-- 目標時間設定 -->
       <section class="section-card">
         <div class="section-title">
-          <span>⏱️ 目標觸發時間</span>
+          <span class="title-text">⏱️ 目標觸發時間</span>
           <div class="quick-shortcuts">
             <button type="button" class="btn-chip" id="btnPlus10s">+10秒</button>
             <button type="button" class="btn-chip" id="btnPlus30s">+30秒</button>
@@ -87,9 +107,9 @@
       <!-- 點擊目標設定 -->
       <section class="section-card">
         <div class="section-title">
-          <span>🎯 點擊目標與網頁配置</span>
-          <div style="display:flex; align-items:center; gap:5px;">
-            <span class="badge-tag" id="tpBadge" style="display:none; background:rgba(16,185,129,0.2); color:#10b981; font-weight:bold; font-size:10px;">🎫 遠大售票已適配</span>
+          <span class="title-text">🎯 點擊目標與網頁配置</span>
+          <div class="domain-badge-group">
+            <span class="badge-tag tp-tag" id="tpBadge" style="display:none;">🎫 遠大售票已適配</span>
             <span class="domain-tag" id="currentDomainBadge">當前網頁</span>
           </div>
         </div>
@@ -146,9 +166,11 @@
 
           <!-- 螢幕座標備案面板 -->
           <div class="ftab-panel" id="fpanel-coord">
-            <div class="coords-row" style="margin-top:2px;">
-              <label class="checkbox-label">
-                <input type="checkbox" id="useCoordsToggle"> 啟用螢幕座標點擊
+            <div class="coords-row">
+              <label class="switch-label">
+                <input type="checkbox" id="useCoordsToggle" class="switch-input">
+                <span class="switch-slider"></span>
+                <span class="switch-text">啟用螢幕座標點擊</span>
               </label>
             </div>
             <div class="coords-inputs-full" id="coordsInputBox">
@@ -159,7 +181,7 @@
                 <input type="number" id="coordY" class="mini-input wide-input" placeholder="0">
                 <button type="button" class="btn-chip" id="btnCaptureCoords" title="點擊後，移至目標網頁點一下以擷取座標">📍 擷取</button>
               </div>
-              <p class="fallback-hint warn-hint">⚠️ 此備案不依賴任何 DOM 元素，直接對頁面絕對座標 (X, Y) 派發原生點擊。座標在擷取時已自動加入卷軸偏移量，頁面滾動後仍可正確命中目標。<br>適用：頁面被保護、元素在 canvas 中、或其他所有方式均失敗時</p>
+              <p class="fallback-hint warn-hint">⚠️ 此備案不依賴任何 DOM 元素，直接對頁面絕對座標派發原生點擊。適用於按鈕被反爬蟲保護、canvas 元素或特殊框架。</p>
             </div>
           </div>
         </div>
@@ -169,18 +191,24 @@
           <summary>🛡️ 進階備案設定 (Shadow DOM / iframe / CDP)</summary>
           <div class="advanced-body">
             <div class="option-row">
-              <label class="checkbox-label" title="自動穿透 Web Component / Shadow DOM 中的元素">
-                <input type="checkbox" id="useShadowDomToggle"> 啟用 Shadow DOM 穿透搜尋
+              <label class="switch-label">
+                <input type="checkbox" id="useShadowDomToggle" class="switch-input">
+                <span class="switch-slider"></span>
+                <span class="switch-text">啟用 Shadow DOM 穿透搜尋</span>
               </label>
             </div>
             <div class="option-row">
-              <label class="checkbox-label" title="嘗試在同源 iframe 框架內部查詢元素">
-                <input type="checkbox" id="useIframeSearchToggle"> 啟用 iframe 內部元素搜尋
+              <label class="switch-label">
+                <input type="checkbox" id="useIframeSearchToggle" class="switch-input">
+                <span class="switch-slider"></span>
+                <span class="switch-text">啟用 iframe 內部元素搜尋</span>
               </label>
             </div>
             <div class="option-row">
-              <label class="checkbox-label" title="當所有 DOM 方式失敗時，自動切換為 CDP 座標點擊">
-                <input type="checkbox" id="useCoordFallbackToggle" checked> 所有方式失敗時自動切換至 CDP 座標點擊
+              <label class="switch-label">
+                <input type="checkbox" id="useCoordFallbackToggle" class="switch-input" checked>
+                <span class="switch-slider"></span>
+                <span class="switch-text">所有方式失敗時自動切換至 CDP 座標點擊</span>
               </label>
             </div>
           </div>
@@ -191,39 +219,52 @@
           <summary>⚙️ 實體滑鼠、CDP 原生點擊與連點選項</summary>
           <div class="advanced-body">
             <!-- 系統級本機實體滑鼠 -->
-            <div class="option-row" style="flex-direction:column; align-items:flex-start; gap:6px; background:rgba(0, 242, 254, 0.06); padding:8px 10px; border-radius:6px; border:1px solid rgba(0, 242, 254, 0.25);">
-              <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
-                <label class="checkbox-label" title="透過 Windows user32.dll 原生實體滑鼠驅動點擊，100% 繞過所有瀏覽器防爬蟲與 isTrusted 阻擋">
-                  <input type="checkbox" id="useSystemMouseToggle"> 🖱️ 啟用本機實體滑鼠驅動點擊
+            <div class="mouse-server-card">
+              <div class="mouse-header-row">
+                <label class="switch-label">
+                  <input type="checkbox" id="useSystemMouseToggle" class="switch-input">
+                  <span class="switch-slider"></span>
+                  <span class="switch-text">🖱️ 本機實體滑鼠驅動點擊</span>
                 </label>
-                <span class="badge-tag" id="systemMouseStatusBadge" style="font-size:10px; cursor:pointer;" title="點擊檢測本機滑鼠伺服器">檢測中...</span>
+                <span class="badge-tag" id="systemMouseStatusBadge" title="點擊檢測本機滑鼠伺服器">檢測中...</span>
               </div>
-              <p class="fallback-hint" style="margin:0; font-size:10.5px; color:#94a3b8;">
-                調用本機實體滑鼠游標移動與點擊，無可阻擋。<br>
-                位址：<code style="color:#38bdf8;">127.0.0.1:28888</code>
-                <button type="button" class="btn-chip" id="btnHelpMouseServer" style="font-size:10px; padding:1px 6px; margin-left:4px;">❓ 如何啟動</button>
+              <p class="mouse-hint">
+                透過 Windows user32.dll 原生游標移動點擊，100% 繞過 isTrusted 限制。<br>
+                位址：<code>127.0.0.1:28888</code>
+                <button type="button" class="btn-chip" id="btnHelpMouseServer">❓ 如何啟動</button>
               </p>
             </div>
 
             <div class="option-row">
-              <label class="checkbox-label" title="使用 Chrome 除錯器協議派發 100% 真實 isTrusted: true 滑鼠事件">
-                <input type="checkbox" id="useCdpToggle" checked> 啟用 CDP 原生可信點擊 (isTrusted: true)
+              <label class="switch-label">
+                <input type="checkbox" id="useCdpToggle" class="switch-input" checked>
+                <span class="switch-slider"></span>
+                <span class="switch-text">啟用 CDP 原生可信點擊 (isTrusted: true)</span>
               </label>
             </div>
-            <div class="option-row">
-              <label for="pollDurationInput" title="目標時間到達時，若按鈕未就緒或顯示「尚未開賣」，以 10ms 頻率持續輪詢">開賣極速輪詢時間：</label>
-              <input type="number" id="pollDurationInput" min="0" max="10000" step="100" value="2000" class="mini-input" style="width:55px;">
-              <span class="hint">毫秒 (ms)</span>
+
+            <div class="option-row inline-between">
+              <label for="pollDurationInput">開賣極速輪詢時間：</label>
+              <div class="inline-input-group">
+                <input type="number" id="pollDurationInput" min="0" max="10000" step="100" value="2000" class="mini-input">
+                <span class="unit-text">ms</span>
+              </div>
             </div>
-            <div class="option-row">
+
+            <div class="option-row inline-between">
               <label for="repeatCount">連點次數：</label>
-              <input type="number" id="repeatCount" min="1" max="20" value="1" class="mini-input">
-              <span class="hint">次</span>
+              <div class="inline-input-group">
+                <input type="number" id="repeatCount" min="1" max="20" value="1" class="mini-input">
+                <span class="unit-text">次</span>
+              </div>
             </div>
-            <div class="option-row">
+
+            <div class="option-row inline-between">
               <label for="repeatInterval">連點間隔：</label>
-              <input type="number" id="repeatInterval" min="10" max="1000" value="50" class="mini-input">
-              <span class="hint">毫秒 (ms)</span>
+              <div class="inline-input-group">
+                <input type="number" id="repeatInterval" min="10" max="1000" value="50" class="mini-input">
+                <span class="unit-text">ms</span>
+              </div>
             </div>
           </div>
         </details>
@@ -241,29 +282,113 @@
 
     </div><!-- end mainpanel-main -->
 
-    <!-- ══════════════════ 多目標點擊面板 ══════════════════ -->
+    <!-- ══════════════════ 2. 遠大售票專屬面板 ══════════════════ -->
+    <div class="main-panel" id="mainpanel-ticketplus">
+      <section class="section-card tp-hero-card">
+        <div class="tp-header-row">
+          <div class="tp-title-group">
+            <span class="tp-icon">🎫</span>
+            <div>
+              <h3>遠大售票系統深度適配</h3>
+              <span class="tp-subtitle">ticketplus.com.tw 專用自動化引擎</span>
+            </div>
+          </div>
+          <span class="tp-active-pill" id="tpActiveIndicator">偵測中...</span>
+        </div>
+        <p class="tp-desc">
+          針對 Ticket Plus 的 Vue 3 響應式元件進行深度穿透，開賣瞬間自動以 10ms 極速輪詢搶票，並支援自動選取張數、同意條款與送出確認！
+        </p>
+      </section>
+
+      <!-- 自動張數與流程設定 -->
+      <section class="section-card">
+        <div class="section-title">
+          <span class="title-text">⚙️ 自動購票張數與流程選項</span>
+        </div>
+
+        <div class="option-row">
+          <label class="switch-label">
+            <input type="checkbox" id="tpEnabledToggle" class="switch-input" checked>
+            <span class="switch-slider"></span>
+            <span class="switch-text font-bold">啟用 Ticket Plus 自動化加速</span>
+          </label>
+        </div>
+
+        <!-- 購票張數選擇 -->
+        <div class="tp-qty-section">
+          <label class="tp-qty-label">🎯 目標購票張數：</label>
+          <div class="tp-qty-chips" id="tpQtyChips">
+            <button type="button" class="qty-chip active" data-qty="1">1 張</button>
+            <button type="button" class="qty-chip" data-qty="2">2 張</button>
+            <button type="button" class="qty-chip" data-qty="3">3 張</button>
+            <button type="button" class="qty-chip" data-qty="4">4 張</button>
+          </div>
+          <input type="hidden" id="tpQtyInput" value="1">
+          <p class="fallback-hint">
+            進入選票頁面後，將自動尋找 <code>+</code> 加號按鈕、下拉選單或數字輸入框填入指定張數。
+          </p>
+        </div>
+
+        <div class="option-row">
+          <label class="switch-label">
+            <input type="checkbox" id="tpAutoAgreeToggle" class="switch-input" checked>
+            <span class="switch-slider"></span>
+            <span class="switch-text">自動勾選「同意會員服務條款」</span>
+          </label>
+        </div>
+
+        <div class="option-row">
+          <label class="switch-label">
+            <input type="checkbox" id="tpAutoConfirmToggle" class="switch-input" checked>
+            <span class="switch-slider"></span>
+            <span class="switch-text">自動點擊「下一步 / 確認張數 / 確定」按鈕</span>
+          </label>
+        </div>
+      </section>
+
+      <!-- 立即手動觸發測試 -->
+      <section class="section-card">
+        <div class="section-title">
+          <span class="title-text">⚡ 測試與手動觸發</span>
+        </div>
+        <p class="fallback-hint" style="margin-bottom:8px;">
+          在 Ticket Plus 購票頁面開啟時，點擊下方按鈕可立即測試自動選張數與點擊確認：
+        </p>
+        <button type="button" class="btn-picker" id="btnRunTpAutoFlow">
+          🎫 立即執行選張數與確認流程
+        </button>
+      </section>
+
+      <footer class="footer-actions">
+        <button type="button" class="btn-secondary" id="btnGoToMainTab" style="flex:1;">
+          ⏱️ 前往主面板設定倒數開賣
+        </button>
+      </footer>
+    </div><!-- end mainpanel-ticketplus -->
+
+    <!-- ══════════════════ 3. 多目標點擊面板 ══════════════════ -->
     <div class="main-panel" id="mainpanel-multi">
       <section class="section-card">
         <div class="section-title">
-          <span>🔗 多目標點擊序列</span>
+          <span class="title-text">🔗 多目標點擊序列</span>
           <button type="button" class="btn-chip" id="btnAddTarget" title="新增目標（最多 10 個）">＋ 新增目標</button>
         </div>
-        <p class="fallback-hint" style="margin-bottom:6px;">
-          設定多個目標依序點擊，T+0ms 代表觸發時間點，T+200ms 即觸發後 200 毫秒執行。
-          拖曳 ⠿ 可調整執行順序。
+        <p class="fallback-hint" style="margin-bottom:8px;">
+          設定多個目標依序點擊，T+0ms 代表觸發時間點，T+200ms 即觸發後 200 毫秒執行。可拖曳 ⠿ 調整執行順序。
         </p>
         <div id="multiTargetList" class="multi-target-list">
           <!-- 動態生成 -->
         </div>
-        <p class="fallback-hint warn-hint" id="multiTargetEmpty" style="text-align:center;display:block;">
-          尚無目標，點擊「＋ 新增目標」開始設定
-        </p>
+        <div class="empty-state" id="multiTargetEmpty">
+          <span class="empty-icon">📋</span>
+          <p>尚無目標，點擊「＋ 新增目標」開始設定</p>
+        </div>
       </section>
 
       <section class="section-card">
-        <div class="section-title"><span>⏱️ 觸發時間（共用主面板設定）</span></div>
+        <div class="section-title"><span class="title-text">⏱️ 觸發時間（共用主面板設定）</span></div>
         <p class="fallback-hint">
-          多目標序列使用主面板「⏱️ 目標觸發時間」設定的時間點做為 T+0ms 基準，請先至主面板設定目標時間。
+          多目標序列使用主面板設定的時間點做為 T+0ms 基準，請先至主面板設定目標時間。
         </p>
       </section>
 
@@ -277,68 +402,94 @@
       </footer>
     </div><!-- end mainpanel-multi -->
 
-    <!-- ══════════════════ AI 設定面板 ══════════════════ -->
+    <!-- ══════════════════ 4. AI 設定面板 ══════════════════ -->
     <div class="main-panel" id="mainpanel-ai">
       <section class="section-card">
-        <div class="section-title"><span>🤖 AI 驗證碼識別設定</span></div>
-        <p class="fallback-hint" style="margin-bottom:10px;">
-          選擇 AI 模型並填入 API Key。點擊「🔍 偵測並解碼」將對當前頁面驗證碼進行截圖並傳送給 AI 解析。
-          API Key 加密存儲於本地，不會上傳。
+        <div class="section-title"><span class="title-text">🤖 AI 模型與自動掃描設定</span></div>
+        <p class="fallback-hint" style="margin-bottom:12px;">
+          填入 API Key 後點擊「🔍 掃描模型」，系統將自動呼叫官方 API 掃描出最新支援的多模態視覺模型！
         </p>
 
-        <div class="option-row" style="margin-bottom:8px;">
-          <label for="aiModelSelect">AI 模型：</label>
-          <select id="aiModelSelect" class="styled-select" style="flex:1;">
-            <option value="gemini-2.0-flash">Google Gemini 2.0 Flash</option>
+        <!-- AI 提供商切換 -->
+        <div class="ai-provider-row">
+          <label>AI 提供商：</label>
+          <div class="provider-chips" id="providerChips">
+            <button type="button" class="provider-chip active" data-provider="gemini">Google Gemini</button>
+            <button type="button" class="provider-chip" data-provider="openai">OpenAI</button>
+            <button type="button" class="provider-chip" data-provider="claude">Anthropic</button>
+          </div>
+          <input type="hidden" id="aiProviderSelect" value="gemini">
+        </div>
+
+        <!-- API Key 輸入與掃描 -->
+        <div class="api-key-container">
+          <label for="aiApiKey">API Key：</label>
+          <div class="input-action-row">
+            <div class="password-input-wrapper">
+              <input type="password" id="aiApiKey" class="styled-input code-input" placeholder="貼上 API Key (支援自動偵測)">
+              <button type="button" class="btn-icon-inside" id="btnToggleApiKey" title="顯示/隱藏 Key">👁</button>
+            </div>
+            <button type="button" class="btn-scan" id="btnScanModels" title="掃描此 API Key 支援的所有模型">
+              <span class="scan-spinner" id="scanSpinner" style="display:none;"></span>
+              <span id="scanBtnText">🔍 掃描模型</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 掃描結果徽章 -->
+        <div class="scan-status-row" id="scanStatusBox" style="display:none;">
+          <span class="badge-tag scan-badge" id="scanStatusBadge">✨ 已掃描到模型</span>
+        </div>
+
+        <!-- 模型下拉選單 -->
+        <div class="model-select-container">
+          <div class="label-row-between">
+            <label for="aiModelSelect">可用模型：</label>
+            <span class="model-count-tag" id="modelCountTag">4 個預設模型</span>
+          </div>
+          <select id="aiModelSelect" class="styled-select select-full">
+            <option value="gemini-2.0-flash">Google Gemini 2.0 Flash (推薦)</option>
             <option value="gemini-1.5-flash">Google Gemini 1.5 Flash</option>
             <option value="gpt-4o">OpenAI GPT-4o Vision</option>
             <option value="claude-3-5-sonnet-20241022">Anthropic Claude 3.5 Sonnet</option>
           </select>
         </div>
 
-        <div class="option-row" style="margin-bottom:8px; flex-direction:column; align-items:flex-start; gap:4px;">
-          <label for="aiApiKey" style="font-size:11px; color:#94a3b8;">API Key：</label>
-          <div style="display:flex; gap:6px; width:100%;">
-            <input type="password" id="aiApiKey" class="styled-input code-input"
-              placeholder="貼上您的 API Key" style="flex:1; text-align:left;">
-            <button type="button" class="btn-chip" id="btnToggleApiKey" title="顯示/隱藏 Key">👁</button>
-          </div>
+        <!-- 自訂提示詞 -->
+        <div class="prompt-container">
+          <label for="aiPrompt">自訂提示詞（可留空使用預設）：</label>
+          <textarea id="aiPrompt" class="styled-input code-input textarea-styled"
+            placeholder="這是一個驗證碼圖片，請只回答驗證碼中的文字或數字，不要包含任何解釋。"></textarea>
         </div>
 
-        <div class="option-row" style="margin-bottom:8px; flex-direction:column; align-items:flex-start; gap:4px;">
-          <label for="aiPrompt" style="font-size:11px; color:#94a3b8;">自訂提示詞（可留空用預設）：</label>
-          <textarea id="aiPrompt" class="styled-input code-input"
-            placeholder="這是一個驗證碼圖片，請只回答驗證碼中的文字或數字，不要包含任何解釋。"
-            style="height:52px; resize:vertical; text-align:left; padding:6px; line-height:1.4;"></textarea>
-        </div>
-
-        <div style="display:flex; gap:8px; margin-top:6px;">
-          <button type="button" class="btn-picker" id="btnSaveAiSettings" style="flex:1;">
+        <div class="action-btn-row">
+          <button type="button" class="btn-picker" id="btnSaveAiSettings">
             💾 儲存設定
           </button>
-          <button type="button" class="btn-secondary" id="btnDetectSolveCaptcha" style="flex:1.4;">
+          <button type="button" class="btn-secondary" id="btnDetectSolveCaptcha">
             🔍 偵測並解碼驗證碼
           </button>
         </div>
 
-        <div id="captchaResultBox" class="captcha-result-box" style="display:none;">
-          <div class="detail-row">
-            <span class="detail-label">偵測結果：</span>
-            <span id="captchaTypeText" class="detail-value">—</span>
+        <!-- 解碼結果面板 -->
+        <div id="captchaResultBox" class="captcha-result-card" style="display:none;">
+          <div class="captcha-res-header">
+            <span>驗證碼解析結果</span>
+            <span id="captchaTypeText" class="badge-tag">未知</span>
           </div>
-          <div class="detail-row">
-            <span class="detail-label">AI 解答：</span>
-            <span id="captchaAnswerText" class="detail-value" style="color:#10b981;">—</span>
+          <div class="captcha-res-body">
+            <div class="captcha-answer" id="captchaAnswerText">—</div>
+            <button type="button" class="btn-chip btn-chip-fill" id="btnFillCaptchaAnswer">
+              ✅ 自動填入輸入框
+            </button>
           </div>
-          <button type="button" class="btn-chip" id="btnFillCaptchaAnswer" style="margin-top:4px;">
-            ✅ 填入驗證碼
-          </button>
         </div>
       </section>
     </div><!-- end mainpanel-ai -->
 
-    <!-- 倒數即時狀態 -->
+    <!-- 倒數即時狀態橫幅 -->
     <div class="status-banner" id="statusBanner">
+      <span class="status-pulse-dot"></span>
       <span id="statusBannerText">待命中</span>
     </div>
 
@@ -347,23 +498,23 @@
       <div class="modal-box">
         <div class="modal-header">
           <span>🖱️ 本機實體滑鼠連線服務教學</span>
-          <button type="button" id="btnCloseMouseModal" class="chrono-hud-btn-icon">✕</button>
+          <button type="button" id="btnCloseMouseModal" class="modal-close-btn">✕</button>
         </div>
         <div class="modal-content">
-          <p style="margin-bottom:8px; font-size:12px; line-height:1.5;">
-            本機實體滑鼠服務能直接呼叫 Windows 系統驅動 (user32.dll) 移動實體游標並點擊，是穿透 <b>ticketplus.com.tw</b> 等高防售票網站的最強終極方案！
+          <p class="modal-intro">
+            本機實體滑鼠服務直接調用 Windows 系統硬體驅動 (user32.dll) 移動實體游標並點擊，可徹底繞過 <b>ticketplus.com.tw</b> 等高防售票網站的 isTrusted 阻擋！
           </p>
-          <div style="background:#090d16; border:1px solid #334155; padding:8px 10px; border-radius:6px; font-family:monospace; font-size:11px; margin-bottom:10px;">
-            📁 腳本位置：<br>
-            <span style="color:#38bdf8;">chrono-clicker/native_helper/</span><br><br>
-            🚀 啟動方式（二選一）：<br>
-            1. 雙擊執行 <b style="color:#10b981;">start_mouse_server.bat</b><br>
-            2. 或以終端機執行：<code style="color:#f59e0b;">python chrono_mouse_server.py</code>
+          <div class="modal-code-card">
+            <span class="code-title">📁 腳本位置：</span>
+            <code class="code-path">chrono-clicker/native_helper/</code><br><br>
+            <span class="code-title">🚀 啟動方式（二選一）：</span><br>
+            1. 雙擊執行 <b class="code-highlight">start_mouse_server.bat</b><br>
+            2. 或以終端機執行：<code>python chrono_mouse_server.py</code>
           </div>
-          <p style="font-size:11px; color:#94a3b8; margin-bottom:12px;">
+          <p class="modal-foot-note">
             啟動後顯示「⚡ 服務已啟動 127.0.0.1:28888」即可，本外掛將自動連線並點擊！
           </p>
-          <button type="button" class="btn-picker" id="btnTestMouseServer" style="width:100%;">
+          <button type="button" class="btn-picker" id="btnTestMouseServer">
             ⚡ 測試連線狀態
           </button>
         </div>
