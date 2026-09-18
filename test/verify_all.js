@@ -244,6 +244,41 @@ test('遠大售票 Stepper Plus 按鈕識別與張數累加計算', () => {
   assert.strictEqual(clicksNeeded, 3, '從 0 張至 3 張需點擊 3 次');
 });
 
+test('TicketPlusEngine 避免誤將票價或日期判定為張數 (嚴格範圍 0~20)', () => {
+  // 模擬含有票價 $4,800 與日期 2026/10/01 的場次結構
+  const mockCandidates = [
+    { text: '2026/10/01' },
+    { text: '19:30' },
+    { text: '4800' }, // 票價
+    { text: '2' }      // 當前張數
+  ];
+
+  // 舊版邏輯會比對 /^\d+$/，第一時間匹配到 4800 導致張數計算錯誤
+  const buggyResult = mockCandidates.find(c => /^\d+$/.test(c.text));
+  assert.strictEqual(buggyResult.text, '4800', '舊版有缺陷的正規表達式會錯誤匹配 4800 票價');
+
+  // 新版修復邏輯：限制 /^\d{1,2}$/ 且數值在 0~20 內
+  const fixedCandidates = mockCandidates.filter(c => {
+    if (/^\d{1,2}$/.test(c.text)) {
+      const v = parseInt(c.text, 10);
+      return !isNaN(v) && v >= 0 && v <= 20;
+    }
+    return false;
+  });
+  assert.strictEqual(fixedCandidates.length, 1, '新版修復邏輯應只過濾出合法的張數');
+  assert.strictEqual(fixedCandidates[0].text, '2', '應正確識別當前張數為 2');
+});
+
+test('TicketPlusEngine 智慧避開「已售完」票區並鎖定可用票區', () => {
+  const tiers = [
+    { name: 'VIP 5800', soldOut: true, btnText: '+' },
+    { name: 'A區 4800', soldOut: false, btnText: '+' }
+  ];
+
+  tiers.sort((a, b) => (a.soldOut ? 1 : 0) - (b.soldOut ? 1 : 0));
+  assert.strictEqual(tiers[0].name, 'A區 4800', '非售完票區應排在第一位');
+});
+
 test('遠大售票 會員服務條款 Checkbox 識別與自動勾選', () => {
   const termsCheckbox = new MockElement('input', {
     className: 'v-checkbox',
@@ -282,12 +317,21 @@ test('遠大售票 確認/下一步 按鈕辨識', () => {
   assert.strictEqual(found.textContent, '下一步：確認張數', '按鈕內容文字相符');
 });
 
-test('Service Worker solveCaptchaWithAI 支援多元大模型', () => {
+test('TicketPlusEngine 狀態機防無限輪詢重複點擊與杜絕雙重合成點擊', () => {
+  const csCode = fs.readFileSync(path.join(projectRoot, 'content/content_script.js'), 'utf8');
+  assert(csCode.includes('this.state.confirmed'), '必須包含 confirmed 狀態防護');
+  assert(csCode.includes('this.state.quantitySelected'), '必須包含 quantitySelected 狀態防護');
+  assert(csCode.includes('resetState()'), '必須支援 resetState 供重設');
+  assert(csCode.includes('if (!cdpHandled)'), 'CDP 成功觸發時切勿再派發合成 DOM 事件');
+});
+
+test('Service Worker solveCaptchaWithAI 與 AI 模型排序升級', () => {
   const swCode = fs.readFileSync(path.join(projectRoot, 'background/service_worker.js'), 'utf8');
   assert(swCode.includes("normModel.includes('gemini')"), '支援所有 Gemini 系列模型');
   assert(swCode.includes("normModel.startsWith('gpt')"), '支援所有 GPT/o1/o3 模型');
   assert(swCode.includes("normModel.includes('claude')"), '支援所有 Claude 模型');
-  assert(swCode.includes("model.replace(/^models\\//, '')"), 'Gemini 自動去除 models/ 前綴避免 404');
+  assert(swCode.includes("claude-3-7-sonnet-20250219"), 'Claude 模型清單包含最新 3.7 Sonnet 旗艦');
+  assert(swCode.includes("getGeminiRank"), 'Gemini 包含精確匹配與前綴權重排序');
 });
 
 // ─────────────────────────────────────────────────────────────

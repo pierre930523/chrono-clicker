@@ -590,14 +590,19 @@ async function scanAIModels(provider, apiKey) {
       };
     });
 
-    // 依版本與熱門度推薦排序
+    // 依版本與熱門度推薦排序（精確匹配優先於前綴匹配）
     const priority = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+    const getGeminiRank = (id) => {
+      const exactIdx = priority.indexOf(id);
+      if (exactIdx !== -1) return exactIdx * 10;
+      const prefixIdx = priority.findIndex(p => id.startsWith(p));
+      if (prefixIdx !== -1) return prefixIdx * 10 + 5;
+      return 999;
+    };
     filtered.sort((a, b) => {
-      const idxA = priority.findIndex(p => a.id.startsWith(p));
-      const idxB = priority.findIndex(p => b.id.startsWith(p));
-      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-      if (idxA !== -1) return -1;
-      if (idxB !== -1) return 1;
+      const rankA = getGeminiRank(a.id);
+      const rankB = getGeminiRank(b.id);
+      if (rankA !== rankB) return rankA - rankB;
       return a.id.localeCompare(b.id);
     });
 
@@ -634,13 +639,18 @@ async function scanAIModels(provider, apiKey) {
       provider: 'openai'
     }));
 
-    const priority = ['gpt-4o', 'gpt-4o-mini', 'o1-mini', 'o1', 'gpt-4-turbo', 'gpt-4'];
+    const priority = ['gpt-4o', 'gpt-4o-mini', 'o3-mini', 'o1', 'o1-mini', 'gpt-4-turbo', 'gpt-4'];
+    const getOpenAiRank = (id) => {
+      const exactIdx = priority.indexOf(id);
+      if (exactIdx !== -1) return exactIdx * 10;
+      const prefixIdx = priority.findIndex(p => id.startsWith(p));
+      if (prefixIdx !== -1) return prefixIdx * 10 + 5;
+      return 999;
+    };
     filtered.sort((a, b) => {
-      const idxA = priority.findIndex(p => a.id === p || a.id.startsWith(p));
-      const idxB = priority.findIndex(p => b.id === p || b.id.startsWith(p));
-      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-      if (idxA !== -1) return -1;
-      if (idxB !== -1) return 1;
+      const rankA = getOpenAiRank(a.id);
+      const rankB = getOpenAiRank(b.id);
+      if (rankA !== rankB) return rankA - rankB;
       return a.id.localeCompare(b.id);
     });
 
@@ -675,9 +685,10 @@ async function scanAIModels(provider, apiKey) {
     }
 
     if (models.length === 0) {
-      // 官方熱門推薦多模態模型清單
+      // 官方最新多模態視覺模型推薦清單
       models = [
-        { id: 'claude-3-5-sonnet-20241022', displayName: 'Claude 3.5 Sonnet (最新推薦)', description: '高智慧高速度多模態', provider: 'claude' },
+        { id: 'claude-3-7-sonnet-20250219', displayName: 'Claude 3.7 Sonnet (最新旗艦)', description: '最新思考與多模態旗艦模型', provider: 'claude' },
+        { id: 'claude-3-5-sonnet-20241022', displayName: 'Claude 3.5 Sonnet (熱門推薦)', description: '高智慧高速度多模態', provider: 'claude' },
         { id: 'claude-3-5-haiku-20241022', displayName: 'Claude 3.5 Haiku', description: '極速輕量多模態', provider: 'claude' },
         { id: 'claude-3-opus-20240229', displayName: 'Claude 3 Opus', description: '高複雜度深度推理', provider: 'claude' },
         { id: 'claude-3-sonnet-20240229', displayName: 'Claude 3 Sonnet', description: '平衡型視覺模型', provider: 'claude' },

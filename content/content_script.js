@@ -1321,6 +1321,11 @@
       autoConfirm: true,
       autoTriggerCountdown: true
     },
+    state: {
+      quantitySelected: false,
+      agreed: false,
+      confirmed: false
+    },
     observer: null,
     isExecuting: false,
     lastExecTime: 0,
@@ -1339,7 +1344,15 @@
       if (isTpContext) {
         console.log('[ChronoClicker TP] 🎫 遠大售票自動選張數與確認模組啟動，設定:', this.settings);
         this.startObserver();
+        // 若當前 DOM 已存在購票元素，立即嘗試執行
+        setTimeout(() => this.checkAndRunAutoFlow(), 300);
       }
+    },
+
+    resetState() {
+      this.state.quantitySelected = false;
+      this.state.agreed = false;
+      this.state.confirmed = false;
     },
 
     updateSettings(newSettings) {
@@ -1356,13 +1369,9 @@
       this.observer = new MutationObserver(() => {
         if (!this.settings.enabled) return;
         const now = Date.now();
-        if (now - this.lastExecTime < 500) return; // 500ms 防抖
+        if (now - this.lastExecTime < 600) return; // 防抖
 
-        // 偵測是否出現了張數選擇或確認步驟
-        const elements = this.detectElements();
-        if (elements.plusButtons.length > 0 || elements.confirmBtn) {
-          this.runAutoFlow({ silentIfAlreadyDone: true });
-        }
+        this.checkAndRunAutoFlow();
       });
 
       this.observer.observe(document.body, {
@@ -1371,15 +1380,44 @@
       });
     },
 
+    checkAndRunAutoFlow() {
+      if (!this.settings.enabled || this.isExecuting) return;
+      // 若已完成整個流程（確認已送出），不再重複執行
+      if (this.state.confirmed) return;
+
+      const elements = this.detectElements();
+      if (elements.plusButtons.length > 0 || elements.countInputs.length > 0 || elements.selects.length > 0 || elements.confirmBtn) {
+        this.runAutoFlow({ silentIfAlreadyDone: true });
+      }
+    },
+
     detectElements() {
-      // 1. 加號按鈕 (Stepper Plus)
       const allButtons = Array.from(document.querySelectorAll('button, .v-btn, [role="button"]'));
+
+      // 檢查某元素所在區塊是否標記為「已售完」或「完售」
+      const isSoldOutRow = (el) => {
+        const container = el.closest('.session-item, tr, .ticket-row, .v-card, .v-expansion-panel') || el.parentElement;
+        if (!container) return false;
+        const text = (container.textContent || '').replace(/\s+/g, '');
+        return /(?:已售完|完售|已額滿|缺票|暫停販售|soldout)/i.test(text);
+      };
+
+      // 1. 加號按鈕 (Stepper Plus)
       const plusButtons = allButtons.filter(btn => {
         if (btn.disabled && !btn.classList.contains('v-btn--disabled')) return false;
+        if (btn.getAttribute('aria-disabled') === 'true') return false;
         const text = (btn.innerText || btn.textContent || '').trim();
         const hasPlusIcon = !!btn.querySelector('.mdi-plus, i[class*="plus"], [class*="icon-plus"], svg[data-icon="plus"]');
         const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
-        return hasPlusIcon || text === '+' || text === '＋' || ariaLabel.includes('plus') || ariaLabel.includes('增加') || ariaLabel.includes('加');
+        const isPlus = hasPlusIcon || text === '+' || text === '＋' || ariaLabel.includes('plus') || ariaLabel.includes('增加') || ariaLabel.includes('加');
+        return isPlus;
+      });
+
+      // 依可售狀態排序：非售完之票區優先於售完票區
+      plusButtons.sort((a, b) => {
+        const aSold = isSoldOutRow(a) ? 1 : 0;
+        const bSold = isSoldOutRow(b) ? 1 : 0;
+        return aSold - bSold;
       });
 
       // 2. 減號按鈕 (Stepper Minus)
@@ -1391,8 +1429,9 @@
       });
 
       // 3. 張數輸入框或下拉選單
-      const countInputs = Array.from(document.querySelectorAll('input[type="number"], input[aria-label*="張數"], input[placeholder*="張數"], input[name*="count"], input[name*="quantity"]'));
-      const selects = Array.from(document.querySelectorAll('select'));
+      const countInputs = Array.from(document.querySelectorAll('input[type="number"], input[aria-label*="張數"], input[placeholder*="張數"], input[name*="count"], input[name*="quantity"]'))
+        .filter(inp => !isSoldOutRow(inp));
+      const selects = Array.from(document.querySelectorAll('select')).filter(sel => !isSoldOutRow(sel));
 
       // 4. 同意條款 Checkbox
       const agreementCheckboxes = Array.from(document.querySelectorAll('input[type="checkbox"]')).filter(cb => {
@@ -1405,7 +1444,6 @@
       let confirmBtn = null;
       for (const kw of confirmKeywords) {
         const found = allButtons.find(btn => {
-          // 排除加減號自身
           if (plusButtons.includes(btn) || minusButtons.includes(btn)) return false;
           const text = extractButtonText(btn).replace(/\s+/g, '');
           return text.includes(kw);
@@ -1428,19 +1466,23 @@
 
     getCurrentQuantity(plusBtn) {
       if (!plusBtn) return 0;
-      const parent = plusBtn.parentElement || plusBtn.closest('.v-input, .stepper, .quantity-control, tr, .ticket-row');
-      if (parent) {
-        const input = parent.querySelector('input');
-        if (input && input.value !== undefined) {
+      // 限縮在 Stepper 或張數控制元件內部，避免誤讀活動日期或票價
+      const stepper = plusBtn.closest('.quantity-control, .stepper, .v-input, [class*="quantity"], [class*="stepper"]') || plusBtn.parentElement;
+      if (stepper) {
+        const input = stepper.querySelector('input');
+        if (input && input.value !== undefined && input.value !== '') {
           const v = parseInt(input.value, 10);
-          if (!isNaN(v)) return v;
+          if (!isNaN(v) && v >= 0 && v <= 20) return v;
         }
-        const textElements = parent.querySelectorAll('span, div');
-        for (const el of textElements) {
+        // 若無 input，尋找 Stepper 內部純數字元素（嚴格限制 0~20，排除價格與日期）
+        const candidates = Array.from(stepper.querySelectorAll('span, div, p')).filter(el => {
+          return !el.closest('button') && !el.classList.contains('v-btn__content');
+        });
+        for (const el of candidates) {
           const t = el.textContent.trim();
-          if (/^\d+$/.test(t)) {
+          if (/^\d{1,2}$/.test(t)) {
             const v = parseInt(t, 10);
-            if (!isNaN(v)) return v;
+            if (!isNaN(v) && v >= 0 && v <= 20) return v;
           }
         }
       }
@@ -1459,10 +1501,10 @@
         const current = this.getCurrentQuantity(plusBtn);
         const needed = Math.max(0, targetCount - current);
 
-        console.log(`[ChronoClicker TP] 找到 Stepper + 按鈕，當前張數: ${current}, 目標: ${targetCount}, 點擊 ${needed} 次`);
+        console.log(`[ChronoClicker TP] 找到 Stepper + 按鈕，當前張數: ${current}, 目標: ${targetCount}, 需點擊 ${needed} 次`);
         for (let i = 0; i < needed; i++) {
-          this.triggerClick(plusBtn);
-          await new Promise(r => setTimeout(r, 60));
+          await this.triggerClick(plusBtn);
+          await new Promise(r => setTimeout(r, 90));
         }
         success = true;
       }
@@ -1486,13 +1528,21 @@
       if (!success && detected.countInputs.length > 0) {
         const inp = detected.countInputs[0];
         forceUnlockElement(inp);
-        inp.value = targetCount;
+        const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+        if (nativeSetter) {
+          nativeSetter.call(inp, targetCount);
+        } else {
+          inp.value = targetCount;
+        }
         inp.dispatchEvent(new Event('input', { bubbles: true }));
         inp.dispatchEvent(new Event('change', { bubbles: true }));
         console.log(`[ChronoClicker TP] 數字輸入框已填入: ${targetCount}`);
         success = true;
       }
 
+      if (success) {
+        this.state.quantitySelected = true;
+      }
       return success;
     },
 
@@ -1520,6 +1570,7 @@
           agreed = true;
         }
       }
+      if (agreed) this.state.agreed = true;
       return agreed;
     },
 
@@ -1529,13 +1580,19 @@
         const btn = detected.confirmBtn;
         forceUnlockElement(btn);
         console.log(`[ChronoClicker TP] 找到確認按鈕: "${extractButtonText(btn)}" 觸發點擊`);
-        this.triggerClick(btn);
+        await this.triggerClick(btn);
+        this.state.confirmed = true;
         return true;
       }
       return false;
     },
 
-    triggerClick(el) {
+    /**
+     * 防破壞點擊派發器：
+     * 優先派發 CDP 原生 isTrusted: true 事件；
+     * 僅在 CDP 不可用或非 Ticket Plus 時才備用派發 DOM 事件，徹底杜絕重複點擊與反爬蟲警報！
+     */
+    async triggerClick(el) {
       if (!el) return;
       forceUnlockElement(el);
       const coords = getElementCoordinates(el);
@@ -1543,23 +1600,46 @@
       el.classList.add('chrono-click-flash');
       setTimeout(() => el.classList.remove('chrono-click-flash'), 600);
 
-      // 優先使用 CDP 原生事件（具有 isTrusted = true）
-      chrome.runtime.sendMessage({
-        action: 'DISPATCH_CDP_CLICK',
-        payload: { x: coords.viewportX, y: coords.viewportY, repeat: 1 }
-      });
+      let cdpHandled = false;
+      try {
+        const cdpRes = await new Promise(resolve => {
+          chrome.runtime.sendMessage({
+            action: 'DISPATCH_CDP_CLICK',
+            payload: { x: coords.viewportX, y: coords.viewportY, repeat: 1 }
+          }, (res) => {
+            if (chrome.runtime.lastError || !res || !res.success) {
+              resolve(false);
+            } else {
+              resolve(true);
+            }
+          });
+        });
+        cdpHandled = cdpRes;
+      } catch (e) {
+        cdpHandled = false;
+      }
 
-      // 同步 DOM 事件派發作為保險備案
-      setTimeout(() => {
+      // 若 CDP 成功觸發，嚴格終止！不可再派發合成 DOM 事件，避免 Ticket Plus 收到兩次點擊
+      if (!cdpHandled) {
         try {
+          el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+          el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
           el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
           if (typeof el.click === 'function') el.click();
         } catch (e) {}
-      }, 40);
+      }
     },
 
     async runAutoFlow(options = {}) {
       if (this.isExecuting) return { success: false, reason: 'already_running' };
+      if (options.forceReset) {
+        this.resetState();
+      }
+      // 若非強制重設且已經確認完成，避免重複提交
+      if (this.state.confirmed && !options.forceReset) {
+        return { success: true, alreadyDone: true };
+      }
+
       this.isExecuting = true;
       this.lastExecTime = Date.now();
 
@@ -1570,9 +1650,12 @@
       try {
         console.log(`[ChronoClicker TP] ⚡ 執行自動選票：目標張數 ${targetCount}，同意條款: ${doAgree}，自動確定: ${doConfirm}`);
 
-        // 1. 選取張數
-        const qtySelected = await this.selectQuantity(targetCount);
-        await new Promise(r => setTimeout(r, 80));
+        // 1. 選取張數（若尚未選取或強制重跑）
+        let qtySelected = false;
+        if (!this.state.quantitySelected || options.forceReset) {
+          qtySelected = await this.selectQuantity(targetCount);
+          await new Promise(r => setTimeout(r, 100));
+        }
 
         // 2. 勾選條款
         if (doAgree) {
@@ -1582,7 +1665,7 @@
 
         // 3. 點擊確定
         let confirmed = false;
-        if (doConfirm) {
+        if (doConfirm && (!this.state.confirmed || options.forceReset)) {
           confirmed = await this.clickConfirm();
         }
 
@@ -1592,8 +1675,8 @@
 
         return {
           success: true,
-          quantitySelected: qtySelected,
-          confirmed: confirmed,
+          quantitySelected: qtySelected || this.state.quantitySelected,
+          confirmed: confirmed || this.state.confirmed,
           targetCount
         };
       } finally {

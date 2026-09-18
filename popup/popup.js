@@ -392,7 +392,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         chrome.tabs.sendMessage(currentTab.id, {
           action: 'EXECUTE_TP_AUTO_FLOW',
-          payload: tpSettings
+          payload: { ...tpSettings, forceReset: true }
         }, (res) => {
           btnRunTpAutoFlow.disabled = false;
           if (chrome.runtime.lastError) {
@@ -432,40 +432,86 @@ document.addEventListener('DOMContentLoaded', async () => {
   await initTicketPlus();
 
   // ────────────────────────────────────────────────
+  // ────────────────────────────────────────────────
   // 9. AI 模型自動掃描與驗證碼設定
   // ────────────────────────────────────────────────
+  const DEFAULT_MODELS_BY_PROVIDER = {
+    gemini: [
+      { id: 'gemini-2.0-flash', displayName: 'Google Gemini 2.0 Flash (推薦)', description: '次世代超極速多模態模型', provider: 'gemini' },
+      { id: 'gemini-1.5-flash', displayName: 'Google Gemini 1.5 Flash', description: '輕量極速多模態', provider: 'gemini' },
+      { id: 'gemini-1.5-pro', displayName: 'Google Gemini 1.5 Pro', description: '高精度複雜推理', provider: 'gemini' }
+    ],
+    openai: [
+      { id: 'gpt-4o', displayName: 'OpenAI GPT-4o (推薦)', description: '多模態全能旗艦', provider: 'openai' },
+      { id: 'gpt-4o-mini', displayName: 'OpenAI GPT-4o Mini', description: '極速經濟型', provider: 'openai' },
+      { id: 'o3-mini', displayName: 'OpenAI o3-mini', description: '高深度邏輯推理', provider: 'openai' },
+      { id: 'o1-mini', displayName: 'OpenAI o1-mini', description: '數學與程式優化', provider: 'openai' }
+    ],
+    claude: [
+      { id: 'claude-3-7-sonnet-20250219', displayName: 'Claude 3.7 Sonnet (最新旗艦)', description: '最新思考與多模態旗艦', provider: 'claude' },
+      { id: 'claude-3-5-sonnet-20241022', displayName: 'Claude 3.5 Sonnet (熱門推薦)', description: '高智慧高速度多模態', provider: 'claude' },
+      { id: 'claude-3-5-haiku-20241022', displayName: 'Claude 3.5 Haiku', description: '極速輕量多模態', provider: 'claude' },
+      { id: 'claude-3-opus-20240229', displayName: 'Claude 3 Opus', description: '深度推理', provider: 'claude' }
+    ]
+  };
+
+  let scannedModelsCache = {
+    gemini: [],
+    openai: [],
+    claude: []
+  };
+  let providerApiKeys = {
+    gemini: '',
+    openai: '',
+    claude: ''
+  };
+
   async function initAiScanner() {
-    // 讀取已存設定
+    // 讀取已存設定 (支援個別提供商獨立快取與 API Key)
     const res = await chrome.storage.local.get([
-      'ai_provider', 'ai_model', 'ai_api_key', 'ai_prompt', 'scanned_models'
+      'ai_provider', 'ai_model', 'ai_api_key', 'ai_api_keys',
+      'ai_prompt', 'scanned_models', 'scanned_models_by_provider'
     ]);
+
+    if (res.ai_api_keys) Object.assign(providerApiKeys, res.ai_api_keys);
+    if (res.scanned_models_by_provider) Object.assign(scannedModelsCache, res.scanned_models_by_provider);
 
     const savedProvider = res.ai_provider || 'gemini';
     if (aiProviderSelect) aiProviderSelect.value = savedProvider;
     updateProviderChipsUI(savedProvider);
+    updateApiKeyPlaceholder(savedProvider);
 
-    if (res.ai_api_key && aiApiKeyInput) aiApiKeyInput.value = res.ai_api_key;
+    // 優先使用 providerApiKeys，其次平鋪 ai_api_key
+    if (!providerApiKeys[savedProvider] && res.ai_api_key) {
+      providerApiKeys[savedProvider] = res.ai_api_key;
+    }
+    if (aiApiKeyInput) {
+      aiApiKeyInput.value = providerApiKeys[savedProvider] || '';
+    }
+
     if (res.ai_prompt && aiPromptInput) aiPromptInput.value = res.ai_prompt;
 
-    // 若有快取的掃描模型清單，填入下拉選單
-    if (Array.isArray(res.scanned_models) && res.scanned_models.length > 0) {
-      populateModelDropdown(res.scanned_models, res.ai_model);
-      if (modelCountTag) modelCountTag.textContent = `已掃描 ${res.scanned_models.length} 個模型`;
-      if (scanStatusBox && scanStatusBadge) {
-        scanStatusBox.style.display = 'flex';
-        scanStatusBadge.textContent = `✨ 已快取 ${res.scanned_models.length} 個模型 (${savedProvider.toUpperCase()})`;
-      }
-    } else if (res.ai_model && aiModelSelect) {
-      aiModelSelect.value = res.ai_model;
+    // 若相容舊版單一 scanned_models，匯入至當前提供商快取
+    if (Array.isArray(res.scanned_models) && res.scanned_models.length > 0 && scannedModelsCache[savedProvider].length === 0) {
+      scannedModelsCache[savedProvider] = res.scanned_models;
+    }
+
+    // 載入當前提供商的模型選單
+    loadModelsForProvider(savedProvider, res.ai_model);
+
+    // 模型選取變更時立即自動持久化
+    if (aiModelSelect) {
+      aiModelSelect.addEventListener('change', () => {
+        chrome.storage.local.set({ ai_model: aiModelSelect.value });
+        console.log(`[ChronoClicker] 已記住選擇的 AI 模型: ${aiModelSelect.value}`);
+      });
     }
 
     // AI 提供商 Chips 切換
     providerChips.forEach(chip => {
       chip.addEventListener('click', () => {
         const provider = chip.dataset.provider;
-        if (aiProviderSelect) aiProviderSelect.value = provider;
-        updateProviderChipsUI(provider);
-        updateApiKeyPlaceholder(provider);
+        switchProvider(provider);
       });
     });
 
@@ -482,13 +528,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (aiApiKeyInput) {
       aiApiKeyInput.addEventListener('input', (e) => {
         const val = e.target.value.trim();
+        const currentProvider = aiProviderSelect ? aiProviderSelect.value : 'gemini';
+        providerApiKeys[currentProvider] = val;
+
         detectProviderFromKey(val);
 
         clearTimeout(scanDebounceTimer);
-        if (val.length > 20) {
+        if (val.length >= 20) {
           scanDebounceTimer = setTimeout(() => {
             triggerScanModels({ silentOnEmpty: true });
-          }, 800);
+          }, 700);
         }
       });
     }
@@ -513,15 +562,56 @@ document.addEventListener('DOMContentLoaded', async () => {
           return;
         }
 
+        providerApiKeys[provider] = apiKey;
+
         await chrome.storage.local.set({
           ai_provider: provider,
           ai_model: model,
           ai_api_key: apiKey,
+          ai_api_keys: providerApiKeys,
           ai_prompt: prompt
         });
 
         statusBannerText.textContent = '✅ AI 設定已成功儲存！';
       });
+    }
+  }
+
+  function switchProvider(provider) {
+    if (aiProviderSelect) aiProviderSelect.value = provider;
+    updateProviderChipsUI(provider);
+    updateApiKeyPlaceholder(provider);
+
+    // 填入該提供商已存的 Key
+    if (aiApiKeyInput) {
+      aiApiKeyInput.value = providerApiKeys[provider] || '';
+    }
+
+    // 載入該提供商之模型
+    loadModelsForProvider(provider);
+
+    // 儲存當前提供商
+    chrome.storage.local.set({
+      ai_provider: provider,
+      ai_api_keys: providerApiKeys
+    });
+  }
+
+  function loadModelsForProvider(provider, preferredModelId = null) {
+    const cached = scannedModelsCache[provider];
+    if (Array.isArray(cached) && cached.length > 0) {
+      populateModelDropdown(cached, preferredModelId);
+      if (modelCountTag) modelCountTag.textContent = `已掃描 ${cached.length} 個可用模型`;
+      if (scanStatusBox && scanStatusBadge) {
+        scanStatusBox.style.display = 'flex';
+        scanStatusBadge.className = 'badge-tag scan-badge';
+        scanStatusBadge.textContent = `✨ 已快取 ${cached.length} 個模型 (${provider.toUpperCase()})`;
+      }
+    } else {
+      const defaults = DEFAULT_MODELS_BY_PROVIDER[provider] || [];
+      populateModelDropdown(defaults, preferredModelId);
+      if (modelCountTag) modelCountTag.textContent = `${defaults.length} 個推薦模型 (點擊掃描更新)`;
+      if (scanStatusBox) scanStatusBox.style.display = 'none';
     }
   }
 
@@ -554,8 +644,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (detected && aiProviderSelect && aiProviderSelect.value !== detected) {
-      aiProviderSelect.value = detected;
-      updateProviderChipsUI(detected);
+      switchProvider(detected);
       console.log(`[ChronoClicker] 依 API Key 自動切換至提供商: ${detected}`);
     }
   }
@@ -592,12 +681,17 @@ document.addEventListener('DOMContentLoaded', async () => {
           scanStatusBadge.textContent = `✨ 成功掃描到 ${res.models.length} 個模型 (${res.provider.toUpperCase()})`;
         }
 
-        // 快取至 storage
+        // 更新本機與快取
+        scannedModelsCache[res.provider] = res.models;
+        providerApiKeys[res.provider] = key;
+
         chrome.storage.local.set({
           scanned_models: res.models,
+          scanned_models_by_provider: scannedModelsCache,
           ai_provider: res.provider,
           ai_model: aiModelSelect ? aiModelSelect.value : '',
-          ai_api_key: key
+          ai_api_key: key,
+          ai_api_keys: providerApiKeys
         });
 
         statusBannerText.textContent = `🤖 成功掃描到 ${res.models.length} 個最新 AI 模型！`;
@@ -640,6 +734,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       aiModelSelect.value = currentVal;
     } else if (aiModelSelect.options.length > 0) {
       aiModelSelect.selectedIndex = 0;
+    }
+
+    // 儲存選取的模型
+    if (aiModelSelect.value) {
+      chrome.storage.local.set({ ai_model: aiModelSelect.value });
     }
   }
 
